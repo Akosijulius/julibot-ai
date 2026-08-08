@@ -1,0 +1,6 @@
+- [JULIBOT Project](memory/julibot-project.md) — Production AI chat assistant with FastAPI, SQLite/PostgreSQL, JWT auth, Claude AI
+- [JULIBOT Tech Stack](memory/julibot-tech-stack.md) — Python, FastAPI, SQLAlchemy async, Google Gemini (gemini-3.5-flash), SQLite dev / PostgreSQL prod
+- [JULIBOT Auth Flow](memory/julibot-auth-flow.md) — JWT auth with bcrypt, HTTPBearer, protected routes, token lifetime 30min
+- [JULIBOT Database Schema](memory/julibot-database-schema.md) — Users, Conversations, Messages with async SQLAlchemy and aiosqlite
+- [JULIBOT API Endpoints](memory/julibot-api-endpoints.md) — /api/auth/*, /api/conversations/*, chat with Claude AI integration
+- [JULIBOT Testing](memory/julibot-testing.md) — 21 pytest tests, in-memory SQLite, async fixtures, auth + conversations coverage

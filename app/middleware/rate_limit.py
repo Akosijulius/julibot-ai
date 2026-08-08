@@ -1,0 +1,257 @@
+"""
+Rate limiting middleware for JULIBOT.
+
+Implements in-memory rate limiting for single-instance deployments.
+For multi-instance production, replace with Redis-backed solution.
+"""
+
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Optional, Tuple
+
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.core.exceptions import RateLimitException
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+@dataclass
+class RateLimitEntry:
+    """Track requests for a single client/endpoint."""
+
+    count: int = 0
+    window_start: float = field(default_factory=time.time)
+
+
+@dataclass
+class RateLimitConfig:
+    """Configuration for a rate-limited endpoint."""
+
+    requests_per_minute: int
+    key_func: Callable[[Request], str]
+
+
+class InMemoryRateLimiter:
+    """
+    Simple in-memory rate limiter using sliding window.
+
+    Note: This is suitable for single-instance deployments.
+    For production with multiple workers/instances, use Redis.
+    """
+
+    def __init__(self, cleanup_interval: int = 60):
+        self._store: Dict[str, RateLimitEntry] = defaultdict(RateLimitEntry)
+        self._last_cleanup = time.time()
+        self._cleanup_interval = cleanup_interval
+
+    def _cleanup_if_needed(self) -> None:
+        """Periodically clean up old entries to prevent memory leaks."""
+        now = time.time()
+        if now - self._last_cleanup > self._cleanup_interval:
+            # Remove entries older than 2 minutes
+            cutoff = now - 120
+            keys_to_remove = [
+                key for key, entry in self._store.items()
+                if entry.window_start < cutoff
+            ]
+            for key in keys_to_remove:
+                del self._store[key]
+            self._last_cleanup = now
+            logger.debug(f"Cleaned up {len(keys_to_remove)} rate limit entries")
+
+    def check_rate_limit(
+        self,
+        key: str,
+        limit: int,
+        window_seconds: int = 60,
+    ) -> Tuple[bool, int, int]:
+        """
+        Check if request is within rate limit.
+
+        Returns:
+            Tuple of (is_allowed, current_count, retry_after_seconds)
+        """
+        self._cleanup_if_needed()
+
+        now = time.time()
+        entry = self._store[key]
+
+        # Reset window if expired
+        if now - entry.window_start >= window_seconds:
+            entry.count = 0
+            entry.window_start = now
+
+        entry.count += 1
+
+        if entry.count > limit:
+            retry_after = int(window_seconds - (now - entry.window_start))
+            return False, entry.count, max(1, retry_after)
+
+        return True, entry.count, 0
+
+    def reset(self, key: str) -> None:
+        """Reset rate limit for a specific key."""
+        if key in self._store:
+            del self._store[key]
+
+
+# Global rate limiter instance
+rate_limiter = InMemoryRateLimiter()
+
+
+def get_client_ip(request: Request) -> str:
+    """Extract client IP from request, handling proxies."""
+    # Check X-Forwarded-For header first (for reverse proxies)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+
+    # Check X-Real-IP header
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip
+
+    # Fall back to direct client IP
+    if request.client:
+        return request.client.host
+
+    return "unknown"
+
+
+def get_user_id_or_ip(request: Request) -> str:
+    """
+    Get user ID if authenticated, otherwise fall back to IP.
+
+    This allows per-user rate limiting for authenticated requests.
+    """
+    # Check if user is authenticated (set by auth middleware)
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return f"user:{user_id}"
+
+    # Fall back to IP-based limiting
+    return f"ip:{get_client_ip(request)}"
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    FastAPI middleware for rate limiting.
+
+    Configures different limits for different endpoint patterns.
+    """
+
+    def __init__(
+        self,
+        app: FastAPI,
+        chat_limit: int = 20,
+        auth_limit: int = 10,
+        global_limit: int = 100,
+    ):
+        super().__init__(app)
+        self.chat_limit = chat_limit
+        self.auth_limit = auth_limit
+        self.global_limit = global_limit
+
+        # Define rate limit configs per endpoint pattern
+        self.endpoint_limits: Dict[str, RateLimitConfig] = {
+            "/api/conversations/chat": RateLimitConfig(
+                requests_per_minute=chat_limit,
+                key_func=get_user_id_or_ip,
+            ),
+            "/api/auth/login": RateLimitConfig(
+                requests_per_minute=auth_limit,
+                key_func=lambda r: f"auth:{get_client_ip(r)}",
+            ),
+            "/api/auth/register": RateLimitConfig(
+                requests_per_minute=auth_limit,
+                key_func=lambda r: f"auth:{get_client_ip(r)}",
+            ),
+            "/api/auth/google": RateLimitConfig(
+                requests_per_minute=auth_limit,
+                key_func=lambda r: f"auth:{get_client_ip(r)}",
+            ),
+        }
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        """Process request through rate limiter."""
+
+        # Get the path without query parameters
+        path = request.url.path
+
+        # Check endpoint-specific rate limits
+        for pattern, config in self.endpoint_limits.items():
+            if path.startswith(pattern):
+                key = f"{pattern}:{config.key_func(request)}"
+                is_allowed, count, retry_after = rate_limiter.check_rate_limit(
+                    key, config.requests_per_minute
+                )
+
+                if not is_allowed:
+                    logger.warning(
+                        f"Rate limit exceeded for {key}",
+                        extra={"path": path, "count": count},
+                    )
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "detail": "Rate limit exceeded. Please slow down.",
+                            "error": "RATE_LIMIT_EXCEEDED",
+                            "retry_after": retry_after,
+                        },
+                        headers={"Retry-After": str(retry_after)},
+                    )
+
+                break
+
+        # Apply global rate limit
+        global_key = f"global:{get_client_ip(request)}"
+        is_allowed, count, retry_after = rate_limiter.check_rate_limit(
+            global_key, self.global_limit
+        )
+
+        if not is_allowed:
+            logger.warning(
+                f"Global rate limit exceeded for {global_key}",
+                extra={"path": path, "count": count},
+            )
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Too many requests. Please try again later.",
+                    "error": "RATE_LIMIT_EXCEEDED",
+                    "retry_after": retry_after,
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        # Continue to next middleware/handler
+        response = await call_next(request)
+        return response
+
+
+def setup_rate_limiting(app: FastAPI) -> None:
+    """Add rate limiting middleware to FastAPI app."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+
+    app.add_middleware(
+        RateLimitMiddleware,
+        chat_limit=settings.rate_limit_chat,
+        auth_limit=settings.rate_limit_auth,
+        global_limit=settings.rate_limit_global,
+    )
+
+    logger.info(
+        "Rate limiting configured",
+        extra={
+            "chat_limit": settings.rate_limit_chat,
+            "auth_limit": settings.rate_limit_auth,
+            "global_limit": settings.rate_limit_global,
+        },
+    )
