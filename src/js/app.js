@@ -13,6 +13,7 @@
     var activeConversations = [];     // Active conversation list (DB or guest)
     var isStreaming = false;          // Track if we're currently streaming a response
     var abortController = null;       // For cancelling fetch requests
+    var appSessionVersion = 0;        // Guards against stale async init overwriting newer state
 
     // ── DOM References ─────────────────────────────────────────────────────────
     var welcomeContainer = document.getElementById('welcomeContainer');
@@ -38,6 +39,7 @@
     var welcomeLoginBtn  = document.getElementById('welcomeLoginBtn');
     var backToWelcome    = document.getElementById('backToWelcome');
     var passwordMismatch = document.getElementById('passwordMismatch');
+    var chatTitle        = document.getElementById('chatTitle');
 
     // ── Streaming Configuration ────────────────────────────────────────────────
     var streamingEnabled = false;
@@ -234,7 +236,8 @@
     }
 
     logoutBtn.addEventListener('click', function () {
-        // Reset all session state
+        // Invalidate any in-flight session validation, then reset all session state
+        appSessionVersion++;
         token = null;
         currentUser = null;
         isGuest = false;
@@ -336,9 +339,19 @@
 
     // ── Guest Mode ─────────────────────────────────────────────────────────────
     function enterGuestMode() {
-        // Every "Continue as Guest" starts a fresh session
+        // Every "Continue as Guest" starts a completely fresh session.
+        // Invalidate any in-flight session validation and clear any lingering
+        // auth state so guest requests are NOT authenticated as a real user
+        // (and guest conversations are never saved to someone's account).
+        appSessionVersion++;
+        token = null;
+        currentUser = null;
+        currentConversationId = null;
+        localStorage.removeItem('token');
+
         isGuest = true;
         guestConversations = [];
+        activeConversations = [];
         showChatView();
         guestBanner.style.display = 'flex';
         userEmail.textContent = 'Guest';
@@ -902,17 +915,29 @@
     async function initializeApp() {
         if (isGuest) return; // Guest mode has no server-side user
 
+        var myVersion = ++appSessionVersion;
+
+        // Hide auth views immediately so a stale landing page can't flash
+        // (or be clicked) while we re-validate the stored token.
+        welcomeContainer.style.display = 'none';
+        authContainer.style.display = 'none';
+
         try {
             currentUser = await api('/auth/me');
+            if (myVersion !== appSessionVersion) return; // superseded
+
             isGuest = currentUser.user_type === 'guest';
             userEmail.textContent = currentUser.email;
             userAvatar.textContent = getInitial(currentUser);
             showChatView();
             await loadConversations();
         } catch (err) {
-            localStorage.removeItem('token');
+            if (myVersion !== appSessionVersion) return; // superseded
+            console.warn('Session validation failed:', err);
             token = null;
+            currentUser = null;
             isGuest = false;
+            localStorage.removeItem('token');
             showWelcomeView();
         }
     }

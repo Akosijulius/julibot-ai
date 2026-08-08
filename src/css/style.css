@@ -59,6 +59,7 @@ body {
     width: 64px;
     height: 64px;
     margin: 0 auto 1rem;
+    margin-left: 135px;
     border-radius: var(--radius-md);
     object-fit: contain;
 }
@@ -347,9 +348,16 @@ body {
     object-fit: contain;
 }
 
-.chat-header h3 {
+.chat-header h3,
+.chat-title {
     font-size: 1rem;
     font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
 }
 
 .messages-container {
