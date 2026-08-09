@@ -332,23 +332,6 @@ body {
     height: 100%;
 }
 
-.chat-header {
-    padding: 0.875rem 1.25rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-card);
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.chat-header img {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    object-fit: contain;
-}
-
-.chat-header h3,
 .chat-title {
     font-size: 1rem;
     font-weight: 600;

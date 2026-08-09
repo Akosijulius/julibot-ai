@@ -39,7 +39,6 @@
     var welcomeLoginBtn  = document.getElementById('welcomeLoginBtn');
     var backToWelcome    = document.getElementById('backToWelcome');
     var passwordMismatch = document.getElementById('passwordMismatch');
-    var chatTitle        = document.getElementById('chatTitle');
 
     // ── Streaming Configuration ────────────────────────────────────────────────
     var streamingEnabled = false;
@@ -844,7 +843,6 @@
             var guestConv = guestConversations.find(function (c) { return String(c.id) === String(id); });
             if (!guestConv) return;
             currentConversationId = guestConv.id;
-            chatTitle.textContent = guestConv.title;
             if (guestConv.messages.length) {
                 messagesContainer.innerHTML = '';
             } else {
@@ -862,7 +860,6 @@
         try {
             var conv = await api('/conversations/' + id);
             currentConversationId = conv.id;
-            chatTitle.textContent = conv.title;
             if (conv.messages.length) {
                 messagesContainer.innerHTML = '';
             } else {
@@ -905,7 +902,6 @@
 
     function resetChatArea() {
         currentConversationId = null;
-        chatTitle.textContent = isGuest ? 'New Chat' : 'Select a conversation';
         showEmptyState();
         activeConversations = [];
         renderConversations();
