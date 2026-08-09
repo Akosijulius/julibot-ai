@@ -1,0 +1,25 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # Every 10 minutes. Render free-tier web services spin down after
+    # 15 minutes of no inbound traffic, so this stays under the threshold.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping Render health endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping https://julibot-ai.onrender.com/api/health
+        run: |
+          # Generous timeout: a cold start can take up to ~60s.
+          # Exit 0 either way so the keep-alive keeps running even if
+          # the site is temporarily down (Render will wake it on the next tick).
+          curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n" \
+            --max-time 90 \
+            https://julibot-ai.onrender.com/api/health || true
