@@ -815,8 +815,11 @@ body {
     }
 
     .thinking-dot {
-        animation: none;
-        opacity: 0.6;
+        /* Keep the jumping-dot indicator animated: it is the app's
+           "I'm working" signal, so it should always be visible even for
+           users with reduced-motion enabled. */
+        animation: thinkingJump 1.2s cubic-bezier(0.28, 0.84, 0.42, 1) infinite !important;
+        opacity: 0.9;
     }
 
     .thinking-label {
