@@ -4,6 +4,7 @@ Core configuration with validation and security improvements.
 All sensitive values come from environment variables with validation.
 """
 
+import json
 import logging
 import os
 from functools import lru_cache
@@ -64,19 +65,34 @@ class Settings(BaseSettings):
 
     # CORS — dev origins for serving the frontend (localhost/127.0.0.1) and
     # for file:// previews ("null") so the app can be tested without a server.
-    allowed_origins: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-        "null",
-    ]
+    # Stored as a plain string (pydantic-settings never JSON-decodes `str`,
+    # which is what broke deploy with ALLOWED_ORIGINS=https://...). Use
+    # `allowed_origins_list` for the parsed list.
+    allowed_origins: str = (
+        "http://localhost:3000,http://localhost:8000,"
+        "http://127.0.0.1:8000,http://localhost:5500,"
+        "http://127.0.0.1:5500,null"
+    )
 
     # Rate Limiting (requests per minute)
     rate_limit_chat: int = 20
     rate_limit_auth: int = 10
     rate_limit_global: int = 100
+
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        """Parse ALLOWED_ORIGINS into a list (comma-separated or JSON array)."""
+        if not self.allowed_origins:
+            return []
+        value = self.allowed_origins.strip()
+        if value.startswith("["):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return [str(x).strip() for x in parsed if str(x).strip()]
+            except (ValueError, TypeError):
+                pass
+        return [part.strip() for part in value.split(",") if part.strip()]
 
     @field_validator("secret_key")
     @classmethod
