@@ -26,6 +26,9 @@ env/
 ENV/
 .venv
 
+# Node (leftover frontend tooling)
+node_modules/
+
 # IDE
 .vscode/
 .idea/
