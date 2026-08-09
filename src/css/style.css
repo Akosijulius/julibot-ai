@@ -531,15 +531,15 @@ body {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
     border-radius: 50%;
     box-shadow: 0 0 10px rgba(99, 102, 241, 0.55);
-    animation: thinkingBounce 1.2s ease-in-out infinite;
+    animation: thinkingBounce 0.8s ease-in-out infinite;
 }
 
 .thinking-dot:nth-child(2) {
-    animation-delay: 0.4s;
+    animation-delay: 0.25s;
 }
 
 .thinking-dot:nth-child(3) {
-    animation-delay: 0.8s;
+    animation-delay: 0.5s;
 }
 
 @keyframes thinkingBounce {
@@ -548,7 +548,7 @@ body {
         opacity: 0.45;
     }
     30% {
-        transform: translateY(-12px);
+        transform: translateY(-7px);
         opacity: 1;
     }
 }
@@ -809,16 +809,16 @@ body {
         /* Keep the jumping-dot indicator animated: it is the app's
            "I'm working" signal, so it should always be visible even for
            users with reduced-motion enabled. */
-        animation: thinkingBounce 1.2s ease-in-out infinite !important;
+        animation: thinkingBounce 0.8s ease-in-out infinite !important;
         opacity: 0.9;
     }
 
     .thinking-dot:nth-child(2) {
-        animation-delay: 0.4s !important;
+        animation-delay: 0.25s !important;
     }
 
     .thinking-dot:nth-child(3) {
-        animation-delay: 0.8s !important;
+        animation-delay: 0.5s !important;
     }
 
     .thinking-label {
