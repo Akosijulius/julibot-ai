@@ -952,9 +952,69 @@
         this.style.height = Math.min(this.scrollHeight, 160) + 'px';
     });
 
+    // ── Server Connection Check ──────────────────────────────────────────────
+    // Detects two common reasons "localhost refuses to connect":
+    //   1. User opened src/index.html directly via file:// (no server at all)
+    //   2. User navigated to localhost:port but the server isn't running
+    // Shows a clear overlay with instructions instead of silent failure.
+
+    function showConnectionError(message) {
+        var overlay = document.createElement('div');
+        overlay.id = 'serverErrorOverlay';
+        overlay.style.cssText =
+            'position:fixed;inset:0;background:rgba(15,17,21,.96);z-index:9999;' +
+            'display:flex;align-items:center;justify-content:center;';
+        overlay.innerHTML =
+            '<div style="max-width:540px;padding:32px;text-align:center;' +
+                'color:#fff;font-family:-apple-system,system-ui,sans-serif;">' +
+                '<div style="font-size:48px;margin-bottom:12px;">⚠️</div>' +
+                '<h2 style="font-size:22px;margin:0 0 12px;">' +
+                    'Can\'t reach the JULIBOT server' +
+                '</h2>' +
+                '<p style="color:#aab;line-height:1.6;margin:0 0 16px;">' +
+                    escapeHtml(message) +
+                '</p>' +
+                '<p style="color:#889;font-size:13px;margin:0 0 8px;">' +
+                    'From the project folder, run:' +
+                '</p>' +
+                '<pre style="background:#1c1e26;padding:12px 16px;border-radius:8px;' +
+                    'text-align:left;color:#7ee;font-size:13px;overflow-x:auto;' +
+                    'margin:0 0 16px;">' +
+                    'python run.py\n' +
+                    '# then open  http://localhost:8000' +
+                '</pre>' +
+                '<button onclick="location.reload()" style="' +
+                    'padding:10px 24px;background:#4f7cff;color:#fff;border:none;' +
+                    'border-radius:8px;font-size:14px;cursor:pointer;' +
+                    'transition:background .15s;">' +
+                    'Retry' +
+                '</button>' +
+            '</div>';
+        document.body.appendChild(overlay);
+    }
+
+    async function checkServerConnection() {
+        if (window.location.protocol === 'file:') {
+            showConnectionError(
+                'You opened this file directly from disk instead of through the server. ' +
+                'JULIBOT\'s backend must be running to serve the chat.'
+            );
+            return;
+        }
+        try {
+            await api('/health');
+        } catch (err) {
+            showConnectionError(
+                'The backend server is not responding on this address. ' +
+                'It may have stopped or crashed — start it again and reload this page.'
+            );
+        }
+    }
+
     // ── Boot ───────────────────────────────────────────────────────────────────
     loadGoogleConfig();  // Non-blocking: loads Google button config
     checkStreamingConfig();  // Check if streaming is enabled
+    checkServerConnection();  // Detect unreachable-server state
 
     if (token) {
         initializeApp();

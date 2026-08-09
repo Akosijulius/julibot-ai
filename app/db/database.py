@@ -24,8 +24,12 @@ elif database_url.startswith("sqlite://"):
 
 connect_args = {}
 if database_url.startswith("sqlite"):
-    # Required for SQLite when used across threads (e.g. under uvicorn)
-    connect_args = {"check_same_thread": False}
+    # check_same_thread: required when SQLite is used across threads (uvicorn).
+    # timeout: seconds to wait when the DB file is locked by another connection
+    # (e.g. a background title-generation task running alongside a streaming
+    # request). Without this, concurrent requests hit "database is locked"
+    # almost immediately under load.
+    connect_args = {"check_same_thread": False, "timeout": 30}
 
 engine = create_async_engine(
     database_url,

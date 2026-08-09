@@ -130,13 +130,27 @@ copy .env.example .env         # Windows
 ### Running
 
 ```bash
-# Start the dev server (hot-reload enabled)
-uvicorn app.main:app --reload
+# Start the server (recommended — reads HOST/PORT from .env automatically)
+python run.py
 
 # Open in browser
 # http://localhost:8000          — Chat UI
 # http://localhost:8000/docs     — Swagger API docs
 ```
+
+Other ways to start:
+
+```bash
+python -m app           # same as python run.py
+python run.py --reload  # hot-reload while developing (⚠️ see note below)
+python run.py --open    # also opens the browser automatically
+```
+
+> **⚠️ About `--reload`:** On Windows, the uvicorn reloader can leave orphan
+> processes holding port 8000 after you close the terminal. This is the #1 cause
+> of "localhost refuses to connect." The default (`python run.py` without
+> `--reload`) is a stable single process with no orphan risk. Use `--reload`
+> only when actively writing code, and close the terminal properly when done.
 
 ### Testing
 
@@ -275,6 +289,29 @@ mypy app/
 3. Add to `app/services/llm/__init__.py`
 4. Update `app/services/ai_orchestrator.py` provider selection
 5. Add configuration to `app/core/config.py`
+
+## Troubleshooting
+
+### "Connection refused" when opening localhost
+
+1. **Server isn't running.** Open a terminal in the project folder and run `python run.py`.
+2. **Port 8000 is held by an old process.** This happens when you close a terminal without waiting for `Ctrl+C` to finish, or after a crash. Run:
+   ```bash
+   # Windows
+   taskkill /F /PID <PID>
+   # or let run.py handle it:
+   python run.py --force
+   ```
+3. **You opened `src/index.html` directly via `file://`.** The browser can't reach the API. Always open via `http://localhost:8000`.
+4. **Antivirus or firewall** is blocking Python. Add an exception for `venv/Scripts/python.exe`.
+
+### "Database is locked" errors under load
+
+SQLite only supports one writer at a time. The background title-generation task can clash with a concurrent streaming request. If this happens, it resolves on retry. For heavy production use, switch to PostgreSQL by setting `DATABASE_URL` in `.env`.
+
+### Slow first response
+
+The first chat request on a cold start is slower because the AI orchestrator initializes its provider connections. Subsequent requests are fast.
 
 ## License
 

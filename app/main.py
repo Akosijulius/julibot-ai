@@ -3,14 +3,15 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import auth, conversations
 from app.core.config import get_settings
-from app.core.logging import setup_logging
+from app.core.exceptions import JulibotException
+from app.core.logging import get_logger, setup_logging
 from app.db.database import Base, engine
 
 # Import models so SQLAlchemy metadata is populated before create_all
@@ -53,12 +54,7 @@ app = FastAPI(
 # CORS — allow local frontend origins during development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins + [
-        "http://127.0.0.1:8000",
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-        "null",  # file:// origin in some browsers
-    ],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,6 +63,42 @@ app.add_middleware(
 # Setup rate limiting
 from app.middleware.rate_limit import setup_rate_limiting
 setup_rate_limiting(app)
+
+
+# ── Global exception handlers ────────────────────────────────────────────
+# These guarantee that an unhandled error in a route returns a clean JSON
+# response instead of taking the whole server down (a common cause of
+# "localhost suddenly refuses to connect").
+
+
+@app.exception_handler(JulibotException)
+async def julibot_exception_handler(request: Request, exc: JulibotException):
+    """Handle the app's typed exceptions (AI errors, auth, etc.)."""
+    logger = get_logger(__name__)
+    logger.warning(
+        "Handled %s on %s",
+        type(exc).__name__,
+        request.url.path,
+        extra={"code": exc.code, "path": request.url.path},
+    )
+    return JSONResponse(
+        status_code=500,
+        content=exc.to_dict(),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all: never let an unhandled exception crash the server."""
+    logger = get_logger(__name__)
+    logger.exception("Unhandled exception on %s", request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected error occurred. Please try again.",
+            "error": "INTERNAL_SERVER_ERROR",
+        },
+    )
 
 # API routers
 app.include_router(auth.router, prefix="/api")

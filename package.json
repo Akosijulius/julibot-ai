@@ -1,1 +1,10 @@
-{}
+{
+  "name": "julibot",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "start": "python run.py",
+    "dev": "python run.py --reload",
+    "test": "pytest"
+  }
+}
