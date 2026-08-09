@@ -98,8 +98,9 @@ julibot/
 │   ├── test_auth.py            # Auth endpoint tests
 │   └── test_conversations.py   # Conversation tests
 ├── .env.example                # Environment template
-├── requirements.txt            # Python dependencies
-├── pyproject.toml              # pytest configuration
+├── requirements.txt            # Runtime Python dependencies
+├── requirements-dev.txt        # Dev/test dependencies (pytest, lint, etc.)
+├── pytest.ini                  # pytest configuration
 └── README.md                   # This file
 ```
 
