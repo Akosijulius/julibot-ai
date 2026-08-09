@@ -1,0 +1,3 @@
+# Pin the Python runtime for Vercel (and other platforms that read this file).
+# 3.12 is Vercel's default; keep it until you need 3.13+ features.
+3.12

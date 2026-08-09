@@ -1,0 +1,32 @@
+# JULIBOT — local orchestration for the production image.
+#
+# By default this runs on the SQLite file in .env but stores it in a named
+# volume so data survives container recreation. For real deployments, point
+# DATABASE_URL at PostgreSQL (e.g. a managed Postgres service) and remove the
+# volume.
+
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - WORKERS=1
+      - DATABASE_URL=sqlite:////data/julibot.db
+    volumes:
+      - julibot-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  julibot-data:

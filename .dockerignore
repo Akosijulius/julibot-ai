@@ -1,0 +1,35 @@
+# Version control / secrets — never baked into images
+.git
+.gitignore
+.github
+.claude
+.env
+.env.*
+*.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local data & logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+
+# Frontend tooling / tests (source is copied, build artifacts are not)
+node_modules/
+tests/
+served_check.html
+
+# Temp
+.idea/
+.vscode/
+*.swp
