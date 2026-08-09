@@ -1,5 +1,6 @@
 #JULIBOT AI
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -25,18 +26,45 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "src"
 
 
+def _run_migrations() -> None:
+    """Apply Alembic migrations to head.
+
+    Runs synchronously inside a worker thread (see lifespan) because
+    alembic/env.py starts its own event loop via ``asyncio.run``.
+    """
+    from alembic import command
+    from alembic.config import Config as AlembicConfig
+
+    cfg = AlembicConfig(str(PROJECT_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    command.upgrade(cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create database tables on startup and dispose engine on shutdown."""
+    """Initialize the database on startup and dispose the engine on shutdown.
+
+    - Development: create missing tables directly (fast iteration).
+    - Production: apply Alembic migrations. Runs in a worker thread so the
+      event loop is not blocked and no nested-loop error occurs. A migration
+      failure is logged but does NOT take the whole serverless function down —
+      the app still starts so health checks and error responses work.
+    """
     from app.core.logging import get_logger
     logger = get_logger(__name__)
 
     logger.info("JULIBOT starting up...")
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    logger.info("Database tables initialized")
+    if settings.environment == "production":
+        try:
+            await asyncio.to_thread(_run_migrations)
+            logger.info("Database migrations applied (production)")
+        except Exception as exc:  # pragma: no cover - depends on the DB
+            logger.exception("Database migration failed: %s", exc)
+    else:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables initialized (development mode)")
 
     yield
 
