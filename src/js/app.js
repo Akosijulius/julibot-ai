@@ -27,6 +27,8 @@
     var emptyState       = document.getElementById('emptyState');
     var messageInput     = document.getElementById('messageInput');
     var sendBtn          = document.getElementById('sendBtn');
+    var chatInputBox     = document.getElementById('chatInputBox');
+    var mainChat         = document.getElementById('mainChat');
     var userEmail        = document.getElementById('userEmail');
     var userAvatar       = document.getElementById('userAvatar');
     var newChatBtn       = document.getElementById('newChatBtn');
@@ -39,6 +41,25 @@
     var welcomeLoginBtn  = document.getElementById('welcomeLoginBtn');
     var backToWelcome    = document.getElementById('backToWelcome');
     var passwordMismatch = document.getElementById('passwordMismatch');
+    var sidebar          = document.getElementById('sidebar');
+    var sidebarToggle    = document.getElementById('sidebarToggle');
+    var sidebarBackdrop  = document.getElementById('sidebarBackdrop');
+    var settingsBtn      = document.getElementById('settingsBtn');
+    var mobileMenuBtn    = document.getElementById('mobileMenuBtn');
+    var userInfo         = document.getElementById('userInfo');
+    var userSub          = document.getElementById('userSub');
+    var guestLoginBtn    = document.getElementById('guestLoginBtn');
+    var accountPopup     = document.getElementById('accountPopup');
+    var profileModal     = document.getElementById('profileModal');
+    var profileCloseBtn  = document.getElementById('profileCloseBtn');
+    var profilePhotoPreview = document.getElementById('profilePhotoPreview');
+    var profilePhotoBtn  = document.getElementById('profilePhotoBtn');
+    var profilePhotoRemoveBtn = document.getElementById('profilePhotoRemoveBtn');
+    var profilePhotoInput = document.getElementById('profilePhotoInput');
+    var profileDisplayName = document.getElementById('profileDisplayName');
+    var profileError     = document.getElementById('profileError');
+    var profileCancelBtn = document.getElementById('profileCancelBtn');
+    var profileSaveBtn   = document.getElementById('profileSaveBtn');
 
     // ── Streaming Configuration ────────────────────────────────────────────────
     var streamingEnabled = false;
@@ -67,6 +88,74 @@
             var form = document.getElementById(tab.dataset.tab + 'Form');
             if (form) form.classList.add('active');
         });
+    });
+
+    // ── Sidebar (expand / collapse / mobile drawer) ──────────────────────────
+    var COLLAPSE_KEY = 'julibot_sidebar_collapsed';
+
+    function isMobileView() {
+        return window.matchMedia('(max-width: 768px)').matches;
+    }
+
+    // Restore persisted collapsed state (desktop only — CSS ignores it on mobile)
+    if (localStorage.getItem(COLLAPSE_KEY) === '1') {
+        sidebar.classList.add('collapsed');
+    }
+
+    sidebarToggle.addEventListener('click', function () {
+        closeAccountPopup();
+        if (isMobileView()) {
+            closeSidebarDrawer();
+        } else {
+            var collapsed = sidebar.classList.toggle('collapsed');
+            localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
+        }
+        updateAvatarInteractivity();
+    });
+
+    function openSidebarDrawer() {
+        sidebar.classList.add('sidebar-open');
+        sidebarBackdrop.classList.add('show');
+    }
+
+    function closeSidebarDrawer() {
+        sidebar.classList.remove('sidebar-open');
+        sidebarBackdrop.classList.remove('show');
+    }
+
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', openSidebarDrawer);
+    if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', closeSidebarDrawer);
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            closeSidebarDrawer();
+            closeAccountPopup();
+            closeProfileModal();
+        }
+    });
+
+    window.addEventListener('resize', function () {
+        if (!isMobileView()) closeSidebarDrawer();
+    });
+
+    // ── Lightweight toast ─────────────────────────────────────────────────────
+    var toastEl = null;
+    function showToast(message) {
+        if (!toastEl) {
+            toastEl = document.createElement('div');
+            toastEl.className = 'toast';
+            document.body.appendChild(toastEl);
+        }
+        toastEl.textContent = message;
+        toastEl.classList.add('show');
+        clearTimeout(showToast._timer);
+        showToast._timer = setTimeout(function () {
+            toastEl.classList.remove('show');
+        }, 2500);
+    }
+
+    settingsBtn.addEventListener('click', function () {
+        showToast('Settings panel coming soon');
     });
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -234,7 +323,7 @@
         initializeApp();
     }
 
-    logoutBtn.addEventListener('click', function () {
+    function logout() {
         // Invalidate any in-flight session validation, then reset all session state
         appSessionVersion++;
         token = null;
@@ -245,7 +334,9 @@
         activeConversations = [];
         localStorage.removeItem('token');
         showWelcomeView();
-    });
+    }
+
+    logoutBtn.addEventListener('click', logout);
 
     // ── Google Sign-In ─────────────────────────────────────────────────────────
     var googleClientId = null;
@@ -351,11 +442,11 @@
         isGuest = true;
         guestConversations = [];
         activeConversations = [];
+        updateAccountUI();
         showChatView();
         guestBanner.style.display = 'flex';
-        userEmail.textContent = 'Guest';
-        userAvatar.textContent = 'G';
-        newChatBtn.textContent = '+ New Chat';
+        var newChatLabel = newChatBtn.querySelector('.nav-label');
+        if (newChatLabel) newChatLabel.textContent = '+ New Chat';
     }
 
     bannerSignupBtn.addEventListener('click', function () {
@@ -382,11 +473,12 @@
     function showEmptyState() {
         messagesContainer.innerHTML =
             '<div class="empty-state" id="emptyState">' +
-                '<img src="assets/julibot-logo.png" height="110" alt="JULIBOT" class="logo">' +
+                '<img src="assets/julibot-logo-v2.png?v=2" height="110" alt="JULIBOT" class="logo" onerror="this.style.display=\'none\'">' +
                 '<h2>Welcome to JULIBOT</h2>' +
                 '<p class="tagline">How may I help you today?</p>' +
             '</div>';
         emptyState = document.getElementById('emptyState');
+        syncChatMode();
     }
 
     // ── New Conversation ───────────────────────────────────────────────────────
@@ -397,6 +489,7 @@
             item.classList.remove('active');
         });
         messageInput.focus();
+        if (isMobileView()) closeSidebarDrawer();
     });
 
     // ── Last message tracking (for retry) ─────────────────────────────────
@@ -418,9 +511,11 @@
         sendBtn.disabled = true;
         messageInput.value = '';
         resetTextarea();
+        updateSendButton();
 
         addMessage('user', message);
         emptyState.style.display = 'none';
+        syncChatMode();
 
         // Create polished thinking/loading placeholder for assistant response
         var assistantDiv = document.createElement('div');
@@ -734,9 +829,11 @@
     }
 
     function getInitial(user) {
-        if (!user || !user.email) return 'U';
-        // Avatar is the initial of the email, e.g. montillano@ → "M"
-        return user.email.charAt(0).toUpperCase();
+        if (!user) return 'U';
+        // Prefer display name, then username, then email
+        var name = user.display_name || user.username || user.email;
+        if (!name) return 'U';
+        return name.charAt(0).toUpperCase();
     }
 
     function scrollToBottom() {
@@ -854,6 +951,8 @@
             conversationsList.querySelectorAll('.conversation-item').forEach(function (item) {
                 item.classList.toggle('active', String(item.dataset.id) === String(id));
             });
+            if (isMobileView()) closeSidebarDrawer();
+            syncChatMode();
             return;
         }
 
@@ -871,6 +970,8 @@
             conversationsList.querySelectorAll('.conversation-item').forEach(function (item) {
                 item.classList.toggle('active', parseInt(item.dataset.id, 10) === conv.id);
             });
+            if (isMobileView()) closeSidebarDrawer();
+            syncChatMode();
         } catch (err) {
             console.error('Failed to load conversation:', err);
         }
@@ -882,6 +983,8 @@
         authContainer.style.display = 'none';
         chatContainer.classList.remove('active');
         guestBanner.style.display = 'none';
+        closeAccountPopup();
+        closeProfileModal();
     }
 
     function showAuthView() {
@@ -907,6 +1010,339 @@
         renderConversations();
     }
 
+    // ── Account avatar + popup menu ──────────────────────────────────────────
+    var PROFILE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+    var LOGOUT_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>';
+    var LOGIN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>';
+
+    function setAvatarInitial(text) {
+        var initial = userAvatar.querySelector('.avatar-initial');
+        if (initial) initial.textContent = text;
+    }
+
+    function renderAvatarImage(photoUrl) {
+        var img = userAvatar.querySelector('.avatar-img');
+        var initial = userAvatar.querySelector('.avatar-initial');
+        if (photoUrl) {
+            img.src = photoUrl;
+            img.hidden = false;
+            initial.hidden = true;
+        } else {
+            img.removeAttribute('src');
+            img.hidden = true;
+            initial.hidden = false;
+        }
+    }
+
+    // Render the sidebar footer (avatar, name, guest vs logged-in) from state
+    function updateAccountUI() {
+        if (isGuest) {
+            userInfo.classList.add('guest');
+            userEmail.textContent = 'Guest';
+            userSub.textContent = '';
+            userAvatar.dataset.tooltip = 'Guest';
+            renderAvatarImage(null);
+            setAvatarInitial('G');
+            userAvatar.setAttribute('aria-label', 'Account menu — Guest');
+        } else if (currentUser) {
+            userInfo.classList.remove('guest');
+            var name = currentUser.display_name || currentUser.username || currentUser.email;
+            var email = currentUser.email || '';
+            userEmail.textContent = name;
+            userSub.textContent = email || 'Account / Profile';
+            userAvatar.dataset.tooltip = email || name;
+            renderAvatarImage(currentUser.profile_photo_url);
+            setAvatarInitial(getInitial(currentUser));
+            userAvatar.setAttribute('aria-label', 'Account menu — ' + name);
+        }
+        buildAccountPopup();
+        updateAvatarInteractivity();
+    }
+
+    function accountPopupItem(action, label, iconSvg, extraClass) {
+        return '<button class="account-popup-item' + (extraClass ? ' ' + extraClass : '') +
+            '" data-action="' + action + '" role="menuitem" type="button">' +
+            '<span class="popup-icon">' + iconSvg + '</span>' +
+            '<span>' + label + '</span>' +
+        '</button>';
+    }
+
+    function buildAccountPopup() {
+        var items;
+        if (isGuest) {
+            items = accountPopupItem('login', 'Login', LOGIN_ICON);
+        } else {
+            items = accountPopupItem('profile', 'Profile', PROFILE_ICON) +
+                    accountPopupItem('logout', 'Logout', LOGOUT_ICON, 'danger');
+        }
+        accountPopup.innerHTML = items;
+    }
+
+    // Position the popup just above the avatar, floating over the chat area
+    // (outside the sidebar) and clamped to the viewport. `position: fixed`
+    // keeps it out of the sidebar's overflow clipping entirely.
+    function positionAccountPopup() {
+        var rect = userAvatar.getBoundingClientRect();
+        var popupWidth = accountPopup.offsetWidth;
+        var popupHeight = accountPopup.offsetHeight;
+        var gap = 8;
+        var margin = 8;
+
+        // Horizontal: align to the avatar's left edge, clamped to the viewport
+        var left = rect.left;
+        if (left + popupWidth > window.innerWidth - margin) {
+            left = window.innerWidth - popupWidth - margin;
+        }
+        if (left < margin) left = margin;
+        accountPopup.style.left = left + 'px';
+
+        // Vertical: prefer above the avatar; flip below if there's no room
+        if (rect.top < popupHeight + gap * 2) {
+            accountPopup.style.top = (rect.bottom + gap) + 'px';
+            accountPopup.style.bottom = 'auto';
+        } else {
+            accountPopup.style.bottom = (window.innerHeight - rect.top + gap) + 'px';
+            accountPopup.style.top = 'auto';
+        }
+    }
+
+    function openAccountPopup() {
+        positionAccountPopup();
+        accountPopup.classList.add('open');
+        userInfo.classList.add('account-open');
+        userAvatar.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeAccountPopup() {
+        accountPopup.classList.remove('open');
+        userInfo.classList.remove('account-open');
+        userAvatar.setAttribute('aria-expanded', 'false');
+    }
+
+    // In guest mode the footer already shows a Login button when the sidebar is
+    // expanded (and in the mobile drawer), so the avatar popup is redundant
+    // there. Only the collapsed sidebar (button hidden) needs it.
+    function shouldShowAccountPopup() {
+        if (isGuest && (isMobileView() || !sidebar.classList.contains('collapsed'))) {
+            return false;
+        }
+        return true;
+    }
+
+    // Mirrors shouldShowAccountPopup() into a class so the avatar can drop its
+    // clickable affordance (cursor / hover ring) when the popup is suppressed.
+    function updateAvatarInteractivity() {
+        userInfo.classList.toggle('popup-enabled', shouldShowAccountPopup());
+    }
+
+    function toggleAccountPopup() {
+        if (!shouldShowAccountPopup()) return;
+        if (accountPopup.classList.contains('open')) {
+            closeAccountPopup();
+        } else {
+            openAccountPopup();
+        }
+    }
+
+    userAvatar.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleAccountPopup();
+    });
+
+    userAvatar.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleAccountPopup();
+        }
+    });
+
+    // Close the popup when clicking anywhere outside the avatar or the popup
+    document.addEventListener('click', function (e) {
+        if (accountPopup.classList.contains('open') &&
+            !e.target.closest('.user-info') &&
+            !e.target.closest('.account-popup')) {
+            closeAccountPopup();
+        }
+    });
+
+    // Keep the popup anchored to the avatar while the viewport changes
+    window.addEventListener('resize', function () {
+        updateAvatarInteractivity();
+        if (accountPopup.classList.contains('open')) positionAccountPopup();
+    });
+
+    window.addEventListener('scroll', function () {
+        if (accountPopup.classList.contains('open')) positionAccountPopup();
+    });
+
+    accountPopup.addEventListener('click', function (e) {
+        var item = e.target.closest('.account-popup-item');
+        if (!item) return;
+        var action = item.dataset.action;
+        closeAccountPopup();
+        if (action === 'profile') {
+            openProfileModal();
+        } else if (action === 'logout') {
+            logout();
+        } else if (action === 'login') {
+            showAuthView();
+            showLoginTab();
+        }
+    });
+
+    function showLoginTab() {
+        document.querySelectorAll('.auth-tab').forEach(function (t) {
+            t.classList.remove('active');
+        });
+        document.querySelectorAll('.auth-form').forEach(function (f) {
+            f.classList.remove('active');
+        });
+        var loginTab = document.querySelector('[data-tab="login"]');
+        if (loginTab) {
+            loginTab.classList.add('active');
+            var form = document.getElementById('loginForm');
+            if (form) form.classList.add('active');
+        }
+    }
+
+    if (guestLoginBtn) {
+        guestLoginBtn.addEventListener('click', function () {
+            showAuthView();
+            showLoginTab();
+        });
+    }
+
+    // ── Profile modal (edit display name + photo) ─────────────────────────────
+    var pendingPhoto; // undefined = no change, null = remove, string = new data URL
+
+    function showProfileError(message) {
+        profileError.textContent = message;
+        profileError.classList.add('show');
+    }
+
+    function hideProfileError() {
+        profileError.textContent = '';
+        profileError.classList.remove('show');
+    }
+
+    function renderProfilePhotoPreview() {
+        var img = profilePhotoPreview.querySelector('img');
+        var initial = profilePhotoPreview.querySelector('.profile-photo-initial');
+        var photo = (pendingPhoto !== undefined) ? pendingPhoto : (currentUser ? currentUser.profile_photo_url : null);
+        if (photo) {
+            img.src = photo;
+            img.hidden = false;
+            initial.hidden = true;
+            profilePhotoRemoveBtn.hidden = false;
+        } else {
+            img.removeAttribute('src');
+            img.hidden = true;
+            initial.hidden = false;
+            initial.textContent = getInitial(currentUser);
+            profilePhotoRemoveBtn.hidden = true;
+        }
+    }
+
+    function openProfileModal() {
+        if (isGuest || !currentUser) return;
+        pendingPhoto = undefined;
+        profileDisplayName.value = currentUser.display_name || currentUser.username || '';
+        hideProfileError();
+        renderProfilePhotoPreview();
+        profileModal.hidden = false;
+        profileDisplayName.focus();
+    }
+
+    function closeProfileModal() {
+        pendingPhoto = undefined;
+        profileModal.hidden = true;
+    }
+
+    async function saveProfile() {
+        var payload = {};
+        var displayName = profileDisplayName.value.trim();
+        payload.display_name = displayName || null;
+        if (pendingPhoto !== undefined) {
+            payload.profile_photo_url = pendingPhoto;
+        }
+
+        profileSaveBtn.disabled = true;
+        hideProfileError();
+        try {
+            currentUser = await api('/auth/me', {
+                method: 'PATCH',
+                body: JSON.stringify(payload)
+            });
+            updateAccountUI();
+            closeProfileModal();
+            showToast('Profile updated');
+        } catch (err) {
+            showProfileError(err.message);
+        } finally {
+            profileSaveBtn.disabled = false;
+        }
+    }
+
+    // Downscale the chosen image to ≤256px before uploading (keeps the stored
+    // data URL small and within the backend's size limit)
+    function handlePhotoFile(file) {
+        if (!file || !file.type || file.type.indexOf('image/') !== 0) {
+            showProfileError('Please choose an image file.');
+            return;
+        }
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+            var img = new Image();
+            img.onload = function () {
+                var MAX = 256;
+                var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+                var canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(img.width * scale));
+                canvas.height = Math.max(1, Math.round(img.height * scale));
+                canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                var dataUrl;
+                try {
+                    dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                } catch (err) {
+                    dataUrl = ev.target.result; // fall back to the original
+                }
+                pendingPhoto = dataUrl;
+                renderProfilePhotoPreview();
+                hideProfileError();
+            };
+            img.onerror = function () {
+                showProfileError('Could not read that image.');
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    profilePhotoBtn.addEventListener('click', function () {
+        profilePhotoInput.click();
+    });
+
+    profilePhotoInput.addEventListener('change', function () {
+        var file = profilePhotoInput.files && profilePhotoInput.files[0];
+        if (file) handlePhotoFile(file);
+        profilePhotoInput.value = '';
+    });
+
+    profilePhotoRemoveBtn.addEventListener('click', function () {
+        pendingPhoto = null;
+        renderProfilePhotoPreview();
+        hideProfileError();
+    });
+
+    profileSaveBtn.addEventListener('click', saveProfile);
+    profileCancelBtn.addEventListener('click', closeProfileModal);
+    profileCloseBtn.addEventListener('click', closeProfileModal);
+
+    // Clicking the overlay backdrop closes the modal
+    profileModal.addEventListener('click', function (e) {
+        if (e.target === profileModal) closeProfileModal();
+    });
+
     // ── Init ───────────────────────────────────────────────────────────────────
     async function initializeApp() {
         if (isGuest) return; // Guest mode has no server-side user
@@ -923,8 +1359,7 @@
             if (myVersion !== appSessionVersion) return; // superseded
 
             isGuest = currentUser.user_type === 'guest';
-            userEmail.textContent = currentUser.email;
-            userAvatar.textContent = getInitial(currentUser);
+            updateAccountUI();
             showChatView();
             await loadConversations();
         } catch (err) {
@@ -943,10 +1378,26 @@
         messageInput.style.height = 'auto';
     }
 
+    // Show/hide the send arrow based on whether the input has content
+    function updateSendButton() {
+        if (chatInputBox) chatInputBox.classList.toggle('has-text', messageInput.value.trim().length > 0);
+    }
+
+    // Toggle the centered "welcome" layout based on the empty-state visibility
+    function syncChatMode() {
+        if (!mainChat) return;
+        var empty = document.querySelector('#emptyState');
+        var welcome = !!empty && empty.offsetParent !== null;
+        mainChat.classList.toggle('welcome', welcome);
+    }
+
     messageInput.addEventListener('input', function () {
         this.style.height = 'auto';
         this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+        updateSendButton();
     });
+    updateSendButton();
+    syncChatMode();
 
     // ── Server Connection Check ──────────────────────────────────────────────
     // Detects two common reasons "localhost refuses to connect":

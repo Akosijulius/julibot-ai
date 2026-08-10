@@ -92,7 +92,7 @@ julibot/
 │   ├── js/
 │   │   └── app.js              # All client-side logic (with SSE support)
 │   └── assets/
-│       └── julibot-logo.png    # Brand logo
+│       └── julibot-logo-v2.png    # Brand logo
 ├── tests/
 │   ├── conftest.py             # Shared fixtures (db, client, user, token)
 │   ├── test_auth.py            # Auth endpoint tests

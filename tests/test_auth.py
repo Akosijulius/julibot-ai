@@ -162,3 +162,104 @@ async def test_protected_route_without_token(client: AsyncClient):
     """Unauthenticated requests to /me return 401/403."""
     response = await client.get("/api/auth/me")
     assert response.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_me_includes_profile_fields(client: AsyncClient, auth_headers):
+    """GET /me returns display_name and profile_photo_url fields."""
+    response = await client.get("/api/auth/me", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert "display_name" in data
+    assert "profile_photo_url" in data
+    assert data["display_name"] is None
+    assert data["profile_photo_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_display_name(client: AsyncClient, auth_headers):
+    """PATCH /me updates the display name and returns it."""
+    response = await client.patch(
+        "/api/auth/me",
+        json={"display_name": "Jane Smith"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, f"Body: {response.text}"
+    data = response.json()
+    assert data["display_name"] == "Jane Smith"
+
+    # Persisted — a follow-up GET reflects the change
+    me = await client.get("/api/auth/me", headers=auth_headers)
+    assert me.json()["display_name"] == "Jane Smith"
+
+
+@pytest.mark.asyncio
+async def test_update_profile_photo(client: AsyncClient, auth_headers):
+    """PATCH /me accepts an image data URL for the profile photo."""
+    photo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    response = await client.patch(
+        "/api/auth/me",
+        json={"profile_photo_url": photo},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, f"Body: {response.text}"
+    data = response.json()
+    assert data["profile_photo_url"] == photo
+
+
+@pytest.mark.asyncio
+async def test_update_profile_invalid_photo(client: AsyncClient, auth_headers):
+    """PATCH /me rejects non-image data URLs."""
+    response = await client.patch(
+        "/api/auth/me",
+        json={"profile_photo_url": "https://example.com/photo.png"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_profile_clears_photo(client: AsyncClient, auth_headers):
+    """PATCH /me with an explicit null clears the profile photo."""
+    photo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    set_response = await client.patch(
+        "/api/auth/me",
+        json={"profile_photo_url": photo},
+        headers=auth_headers,
+    )
+    assert set_response.status_code == 200
+
+    clear_response = await client.patch(
+        "/api/auth/me",
+        json={"profile_photo_url": None},
+        headers=auth_headers,
+    )
+    assert clear_response.status_code == 200
+    assert clear_response.json()["profile_photo_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_profile_partial_keeps_photo(client: AsyncClient, auth_headers):
+    """PATCH /me for display name alone does not wipe the profile photo."""
+    photo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    await client.patch(
+        "/api/auth/me",
+        json={"profile_photo_url": photo},
+        headers=auth_headers,
+    )
+    response = await client.patch(
+        "/api/auth/me",
+        json={"display_name": "Jane"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["display_name"] == "Jane"
+    assert data["profile_photo_url"] == photo
+
+
+@pytest.mark.asyncio
+async def test_update_profile_requires_auth(client: AsyncClient):
+    """PATCH /me without a token is rejected."""
+    response = await client.patch("/api/auth/me", json={"display_name": "X"})
+    assert response.status_code in (401, 403)

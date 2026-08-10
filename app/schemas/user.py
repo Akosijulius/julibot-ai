@@ -5,7 +5,11 @@ User schemas for request validation and response serialization.
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+# Max length for a profile photo data URL. Frontend resizes uploads to ~256px
+# before sending, so this is generous while still guarding against huge payloads.
+MAX_PROFILE_PHOTO_LENGTH = 1_000_000
 
 
 class UserBase(BaseModel):
@@ -42,9 +46,44 @@ class UserResponse(UserBase):
     is_active: bool
     created_at: datetime
     user_type: str = "registered"
+    display_name: Optional[str] = None
+    profile_photo_url: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class UserProfileUpdate(BaseModel):
+    """Schema for updating profile fields (display name / profile photo)."""
+
+    display_name: Optional[str] = Field(None, min_length=1, max_length=50)
+    profile_photo_url: Optional[str] = None
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: Optional[str]) -> Optional[str]:
+        """Trim display name; treat empty/whitespace-only as 'no change' (None)."""
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        return v
+
+    @field_validator("profile_photo_url")
+    @classmethod
+    def validate_profile_photo(cls, v: Optional[str]) -> Optional[str]:
+        """Only accept image data URLs within a size limit."""
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not v.startswith("data:image/"):
+            raise ValueError("Profile photo must be an image data URL")
+        if len(v) > MAX_PROFILE_PHOTO_LENGTH:
+            raise ValueError("Profile photo is too large")
+        return v
 
 
 class UserUpdate(BaseModel):

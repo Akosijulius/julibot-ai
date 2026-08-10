@@ -58,8 +58,8 @@ body {
 .auth-card .logo {
     width: 64px;
     height: 64px;
+    display: block;
     margin: 0 auto 1rem;
-    margin-left: 135px;
     border-radius: var(--radius-md);
     object-fit: contain;
 }
@@ -182,6 +182,7 @@ body {
 /* -----------------------------------------------------------------------------
    Chat View
    ----------------------------------------------------------------------------- */
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
 .sidebar {
     width: 280px;
     min-width: 280px;
@@ -190,55 +191,278 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
+    overflow: hidden;
+    transition: width var(--transition-slow), min-width var(--transition-slow);
 }
 
+.sidebar.collapsed {
+    width: 68px;
+    min-width: 68px;
+    /* Visible so collapsed-item tooltips can float over the chat area */
+    overflow: visible;
+}
+
+/* ── Sidebar header (brand + toggle) ─────────────────────────────────── */
 .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     padding: 1rem;
-    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 .sidebar-header .brand {
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    margin-bottom: 0.75rem;
+    min-width: 0;
+    transition: gap var(--transition-slow);
 }
 
-.sidebar-header .brand img {
+.brand-mark {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary-light);
+    border-radius: var(--radius-sm);
+}
+
+.brand-mark img {
     width: 32px;
     height: 32px;
     border-radius: var(--radius-sm);
     object-fit: contain;
 }
 
-.sidebar-header .brand span {
+.brand-mark .brand-fallback {
+    display: none;
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.brand-mark.no-img .brand-fallback {
+    display: block;
+}
+
+.brand-mark.no-img img {
+    display: none;
+}
+
+.sidebar-header .brand-text {
     font-size: 1.125rem;
     font-weight: 700;
     color: var(--primary);
     letter-spacing: 0.025em;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 180px;
+    opacity: 1;
+    transition: opacity var(--transition-slow), max-width var(--transition-slow);
 }
 
-.new-chat-btn {
-    width: 100%;
-    padding: 0.625rem;
+.sidebar-toggle {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
-    border: 1px dashed var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.sidebar-toggle:hover {
+    color: var(--text-primary);
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.sidebar-toggle svg {
+    transition: transform var(--transition-slow);
+}
+
+.sidebar.collapsed .sidebar-toggle svg {
+    transform: rotate(180deg);
+}
+
+/* Collapsed header: logo centered; toggle hidden, revealed on logo hover */
+.sidebar.collapsed .sidebar-header {
+    position: relative;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem;
+}
+
+.sidebar.collapsed .sidebar-toggle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    align-self: auto;
+    background: var(--bg-dark);
+    border-color: var(--primary);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 3px var(--primary), 0 8px 24px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--transition), visibility var(--transition), background var(--transition), border-color var(--transition);
+}
+
+/* Reveal the toggle when hovering the logo (toggle is the brand's sibling),
+   and keep it visible while the toggle itself is hovered or focused
+   (the toggle covers the logo, so hover would otherwise flicker). */
+.sidebar.collapsed .brand:hover + .sidebar-toggle,
+.sidebar.collapsed .sidebar-toggle:hover,
+.sidebar.collapsed .sidebar-toggle:focus-visible,
+.sidebar.collapsed .sidebar-toggle:focus-within {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.sidebar.collapsed .brand {
+    gap: 0;
+}
+
+.sidebar.collapsed .brand-text {
+    opacity: 0;
+    max-width: 0;
+}
+
+/* ── Sidebar nav (new chat + conversations) ──────────────────────────── */
+.sidebar-nav {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0.75rem 0.75rem 0;
+}
+
+.nav-section-label {
+    padding: 0.625rem 0.75rem 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.nav-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: transparent;
+    border: none;
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
     font-size: 0.875rem;
-    transition: border-color var(--transition), color var(--transition);
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+    transition: background var(--transition), color var(--transition);
 }
 
-.new-chat-btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
+.nav-item:hover {
+    background: var(--primary-light);
+    color: var(--text-primary);
 }
 
+.nav-item .nav-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-right: 0.75rem;
+    transition: margin-right var(--transition-slow);
+}
+
+.nav-item .nav-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 1;
+    transition: opacity var(--transition-slow), max-width var(--transition-slow);
+}
+
+.sidebar.collapsed .nav-item {
+    justify-content: flex-start;
+}
+
+.sidebar.collapsed .nav-item .nav-icon {
+    margin-right: 0.75rem;
+}
+
+.sidebar.collapsed .nav-item .nav-label {
+    opacity: 0;
+    max-width: 0;
+}
+
+/* Tooltip shown when the sidebar is collapsed (labels are hidden) */
+.sidebar.collapsed .nav-item::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%) translateX(-4px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: var(--shadow-card);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+    z-index: 60;
+    pointer-events: none;
+}
+
+.sidebar.collapsed .nav-item:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(0);
+}
+
+.sidebar.collapsed .nav-section-label {
+    display: none;
+}
+
+/* ── Conversations list ──────────────────────────────────────────────── */
 .conversations-list {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem;
+    min-height: 0;
+    padding-bottom: 0.5rem;
+}
+
+.sidebar.collapsed .conversations-list {
+    display: none;
 }
 
 .conversation-item {
@@ -272,16 +496,28 @@ body {
     color: var(--text-secondary);
 }
 
+/* ── Sidebar footer (settings + user) ────────────────────────────────── */
 .sidebar-footer {
-    padding: 1rem;
-    border-top: 1px solid var(--border);
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.25rem 0;
 }
 
 .user-info {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    margin-bottom: 0.625rem;
+    min-width: 0;
+    transition: gap var(--transition-slow);
 }
 
 .user-avatar {
@@ -295,32 +531,294 @@ body {
     font-weight: 600;
     font-size: 0.8125rem;
     flex-shrink: 0;
+    cursor: pointer;
+    transition: box-shadow var(--transition);
+}
+
+.user-avatar:hover {
+    box-shadow: 0 0 0 2px var(--primary);
+}
+
+.user-avatar .avatar-img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.user-avatar .avatar-initial {
+    line-height: 1;
+}
+
+.user-details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    max-width: 220px;
+    opacity: 1;
+    transition: opacity var(--transition-slow), max-width var(--transition-slow);
 }
 
 .user-email {
     font-size: 0.8125rem;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
+    font-weight: 500;
+}
+
+.user-sub {
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
 }
 
 .logout-btn {
-    width: 100%;
-    padding: 0.5rem;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 0.8125rem;
-    transition: border-color var(--transition), color var(--transition);
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
 }
 
 .logout-btn:hover {
     border-color: var(--danger);
     color: var(--danger);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.sidebar.collapsed .user-details {
+    opacity: 0;
+    max-width: 0;
+    white-space: nowrap;
+}
+
+.sidebar.collapsed .logout-btn {
+    display: none;
+}
+
+/* Tooltip for the user avatar when the sidebar is collapsed */
+.sidebar.collapsed .user-avatar {
+    position: relative;
+}
+
+.sidebar.collapsed .user-avatar::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%) translateX(-4px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: var(--shadow-card);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+    z-index: 60;
+    pointer-events: none;
+}
+
+.sidebar.collapsed .user-avatar:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(0);
+}
+
+/* ── Guest footer + account popup (avatar menu) ─────────────────────── */
+.guest-login-btn {
+    flex-shrink: 0;
+    padding: 0.3125rem 0.75rem;
+    background: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition);
+}
+
+.guest-login-btn:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+}
+
+/* Guest footer replaces the logout action with a Login button */
+.user-info.guest .logout-btn {
+    display: none;
+}
+
+.user-info:not(.guest) .guest-login-btn {
+    display: none;
+}
+
+.sidebar.collapsed .guest-login-btn {
+    display: none;
+}
+
+/* In guest mode with the sidebar expanded (or in the mobile drawer) the Login
+   button is already visible, so the avatar is not clickable there */
+.user-info:not(.popup-enabled) .user-avatar {
+    cursor: default;
+}
+
+.user-info:not(.popup-enabled) .user-avatar:hover {
+    box-shadow: none;
+}
+
+.account-popup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    min-width: 180px;
+    max-width: 260px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: 0.3125rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(6px);
+    transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+}
+
+.account-popup.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.account-popup-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+
+.account-popup-item:hover {
+    background: var(--primary-light);
+    color: var(--text-primary);
+}
+
+.account-popup-item.danger {
+    color: var(--danger);
+}
+
+.account-popup-item.danger:hover {
+    background: rgba(239, 68, 68, 0.08);
+    color: var(--danger);
+}
+
+.account-popup-item .popup-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Hide the avatar's floating tooltip while the popup is open */
+.sidebar.collapsed .user-info.account-open .user-avatar::after,
+.sidebar.collapsed .user-info.account-open .user-avatar:hover::after {
+    opacity: 0;
+    visibility: hidden;
+}
+
+/* ── Mobile drawer backdrop ──────────────────────────────────────────── */
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 20;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition-slow), visibility var(--transition-slow);
+}
+
+.sidebar-backdrop.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* ── Mobile menu button (hamburger) ──────────────────────────────────── */
+.mobile-menu-btn {
+    display: none;
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    z-index: 15;
+    transition: background var(--transition), color var(--transition);
+}
+
+.mobile-menu-btn:hover {
+    background: var(--primary-light);
+}
+
+/* ── Toast (lightweight notifications) ───────────────────────────────── */
+.toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(1rem);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 0.625rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    box-shadow: var(--shadow-card);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition-slow), transform var(--transition-slow), visibility var(--transition-slow);
+    z-index: 100;
+}
+
+.toast.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
 }
 
 /* Main chat area */
@@ -330,6 +828,20 @@ body {
     flex-direction: column;
     min-width: 0;
     height: 100%;
+    position: relative;
+}
+
+/* Welcome (empty chat) state: greet + input grouped and vertically centered */
+.main-chat.welcome {
+    justify-content: center;
+}
+
+.main-chat.welcome .messages-container {
+    flex: 0 1 auto;
+}
+
+.main-chat.welcome .empty-state {
+    height: auto;
 }
 
 .chat-title {
@@ -347,6 +859,7 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: 1.25rem;
+    transition: flex-grow var(--transition-slow), flex-basis var(--transition-slow);
 }
 
 /* ── Messages ──────────────────────────────────────────────────────────── */
@@ -680,26 +1193,40 @@ body {
 
 /* ── Chat input ────────────────────────────────────────────────────────── */
 .chat-input-container {
-    padding: 1rem 1.25rem;
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding: 1.25rem 1.5rem;
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
     background: var(--bg-dark);
-    border-top: 1px solid var(--border);
 }
 
 .chat-input-wrapper {
-    max-width: 800px;
+    max-width: 640px;
     margin: 0 auto;
+    position: relative;
+}
+
+/* Rounded field: textarea + floating send arrow */
+.chat-input-box {
+    position: relative;
     display: flex;
-    gap: 0.625rem;
-    align-items: flex-end;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.chat-input-box:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24), 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
 .chat-input {
     flex: 1;
     padding: 0.75rem 0.875rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    padding-right: 52px; /* keep typed text clear of the send arrow */
+    background: transparent;
+    border: none;
+    outline: none;
     color: var(--text-primary);
     font-size: 0.9375rem;
     font-family: inherit;
@@ -707,12 +1234,18 @@ body {
     min-height: 48px;
     max-height: 160px;
     line-height: 1.5;
-    transition: border-color var(--transition);
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;       /* Firefox */
+    -ms-overflow-style: none;    /* old Edge */
 }
 
-.chat-input:focus {
-    outline: none;
-    border-color: var(--primary);
+.chat-input::-webkit-scrollbar {
+    display: none;               /* Chrome/Safari — keep internal scrolling */
+}
+
+.chat-input::placeholder {
+    color: var(--text-secondary);
 }
 
 .chat-input:disabled {
@@ -720,27 +1253,88 @@ body {
     cursor: not-allowed;
 }
 
+/* Send arrow (↑) — floats inside the field, far right */
 .send-btn {
-    padding: 0 1.25rem;
-    height: 48px;
-    background: var(--primary);
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%) scale(0.6);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(96, 165, 250, 0.3); /* light-blue shaded */
     color: #fff;
     border: none;
-    border-radius: var(--radius-md);
     cursor: pointer;
-    font-weight: 600;
-    font-size: 0.9375rem;
-    transition: background var(--transition), opacity var(--transition);
-    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--transition), transform var(--transition),
+        visibility var(--transition), background var(--transition);
 }
 
-.send-btn:hover {
-    background: var(--primary-dark);
+.chat-input-box.has-text .send-btn {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(-50%) scale(1);
 }
 
-.send-btn:disabled {
-    opacity: 0.4;
+.chat-input-box.has-text .send-btn:hover {
+    background: var(--user-msg);
+    transform: translateY(-50%) scale(1.06);
+}
+
+.chat-input-box.has-text .send-btn:active {
+    transform: translateY(-50%) scale(0.98);
+}
+
+.chat-input-box.has-text .send-btn:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
+    transform: translateY(-50%) scale(1);
+}
+
+/* "Send" tooltip above the arrow (does not affect layout) */
+.send-btn::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    transform: translateY(4px) scale(0.95);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 0.3125rem 0.625rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: var(--shadow-card);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+    z-index: 70;
+    pointer-events: none;
+}
+
+.chat-input-box.has-text .send-btn:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+/* AI disclaimer below the input */
+.chat-reminder {
+    max-width: 640px;
+    margin: 0.625rem auto 0;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.75;
 }
 
 /* ── Legacy typing indicator (fallback) ────────────────────────────────── */
@@ -833,12 +1427,129 @@ body {
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
+    /* Sidebar becomes an off-canvas drawer */
     .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 280px;
+        min-width: 280px;
+        transform: translateX(-100%);
+        transition: transform var(--transition-slow);
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+        z-index: 30;
+    }
+
+    .sidebar.sidebar-open {
+        transform: translateX(0);
+    }
+
+    /* Drawer is always full-width on mobile — ignore the collapsed state */
+    .sidebar.collapsed {
+        width: 280px;
+        min-width: 280px;
+    }
+
+    .sidebar.collapsed .sidebar-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 1rem;
+    }
+
+    .sidebar.collapsed .sidebar-toggle {
+        position: static;
+        align-self: auto;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: none;
+        background: transparent;
+        border-color: var(--border);
+        color: var(--text-secondary);
+        box-shadow: none;
+        transition: color var(--transition), background var(--transition), border-color var(--transition);
+    }
+
+    .sidebar.collapsed .sidebar-toggle svg {
+        transform: none;
+    }
+
+    .sidebar.collapsed .brand-text {
+        display: block;
+        opacity: 1;
+        max-width: 180px;
+    }
+
+    .sidebar.collapsed .brand {
+        gap: 0.625rem;
+    }
+
+    .sidebar.collapsed .nav-item {
+        justify-content: flex-start;
+        padding: 0.625rem 0.75rem;
+    }
+
+    .sidebar.collapsed .nav-item .nav-icon {
+        margin-right: 0.75rem;
+    }
+
+    .sidebar.collapsed .nav-item .nav-label,
+    .sidebar.collapsed .nav-section-label,
+    .sidebar.collapsed .conversations-list,
+    .sidebar.collapsed .sidebar-divider,
+    .sidebar.collapsed .logout-btn {
+        display: block;
+    }
+
+    .sidebar.collapsed .nav-item .nav-label {
+        display: block;
+        opacity: 1;
+        max-width: 200px;
+        flex: 1 1 auto;
+    }
+
+    .sidebar.collapsed .user-details {
+        display: flex;
+        opacity: 1;
+        max-width: 220px;
+        flex: 1;
+    }
+
+    .sidebar.collapsed .logout-btn {
+        display: flex;
+    }
+
+    /* Guest footer in the full-width drawer: show the Login button but
+       never a Logout action for guests */
+    .sidebar.collapsed .guest-login-btn {
+        display: flex;
+    }
+
+    .sidebar.collapsed .user-info.guest .logout-btn {
         display: none;
+    }
+
+    .sidebar.collapsed .user-info {
+        justify-content: flex-start;
+        gap: 0.625rem;
+    }
+
+    /* No floating tooltips in the full-width mobile drawer */
+    .sidebar.collapsed .nav-item::after,
+    .sidebar.collapsed .user-avatar::after {
+        display: none;
+    }
+
+    .mobile-menu-btn {
+        display: flex;
     }
 
     .messages-container {
         padding: 1rem;
+        padding-top: 3.75rem;
     }
 
     .message.assistant {
@@ -986,16 +1697,16 @@ body {
     justify-content: center;
     gap: 0.75rem;
     padding: 0.5rem 1rem;
-    background: #854d0e;
-    color: #fefce8;
+    background: var(--primary);
+    color: #fff;
     font-size: 0.8125rem;
     flex-shrink: 0;
     z-index: 10;
 }
 
 .banner-btn {
-    background: rgba(255, 255, 255, 0.2);
-    color: #fff;
+    background: #fff;
+    color: #4f46e5;
     border: none;
     border-radius: var(--radius-sm);
     padding: 0.3rem 0.75rem;
@@ -1007,13 +1718,13 @@ body {
 }
 
 .banner-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: #e0e7ff;
 }
 
 .banner-dismiss {
     background: none;
     border: none;
-    color: #fefce8;
+    color: #fff;
     cursor: pointer;
     font-size: 0.875rem;
     line-height: 1;
@@ -1176,3 +1887,140 @@ body {
     background: rgba(239, 68, 68, 0.15);
     color: var(--danger);
 }
+
+/* -----------------------------------------------------------------------------
+   Modal (profile)
+   ----------------------------------------------------------------------------- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 100;
+}
+
+.modal-overlay[hidden] {
+    display: none;
+}
+
+.modal {
+    width: 100%;
+    max-width: 420px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+    font-size: 1.125rem;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition);
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+    background: var(--primary-light);
+}
+
+.modal-body {
+    padding: 1.25rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.625rem;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+.profile-photo-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.profile-photo {
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+    background: var(--primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1.25rem;
+    overflow: hidden;
+}
+
+.profile-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.profile-photo-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.btn-sm {
+    width: auto;
+    padding: 0.4375rem 0.875rem;
+    font-size: 0.8125rem;
+}
+
+.btn-secondary {
+    background: var(--primary-light);
+    color: var(--primary);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--primary);
+    color: #fff;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.btn-ghost:hover {
+    background: var(--primary-light);
+    color: var(--text-primary);
+    border-color: var(--primary);
+}
+

@@ -15,6 +15,7 @@ from app.schemas.user import (
     TokenData,
     UserCreate,
     UserLogin,
+    UserProfileUpdate,
     UserResponse,
     UserUpdate,
 )
@@ -22,6 +23,7 @@ from app.schemas.user import (
 __all__ = [
     "UserCreate",
     "UserLogin",
+    "UserProfileUpdate",
     "UserResponse",
     "UserUpdate",
     "Token",

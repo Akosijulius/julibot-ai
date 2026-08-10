@@ -15,7 +15,7 @@ from app.core.config import get_settings
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.database import get_db
 from app.models.user import User
-from app.schemas import Token, UserCreate, UserLogin, UserResponse
+from app.schemas import Token, UserCreate, UserLogin, UserProfileUpdate, UserResponse
 from app.schemas.user import GoogleLoginRequest
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -229,4 +229,27 @@ async def get_current_user_info(current_user: User = Depends(require_auth)) -> U
     """
     Get current authenticated user information.
     """
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_current_user_info(
+    update_data: UserProfileUpdate,
+    current_user: User = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """
+    Update the authenticated user's profile (display name and/or profile photo).
+
+    Only authenticated users can reach this (guests have no account to edit).
+    """
+    if "display_name" in update_data.model_fields_set:
+        current_user.display_name = update_data.display_name
+    if "profile_photo_url" in update_data.model_fields_set:
+        # Explicit null clears the photo
+        current_user.profile_photo_url = update_data.profile_photo_url
+
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
     return current_user
