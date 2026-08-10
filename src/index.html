@@ -93,7 +93,7 @@
 
         <!-- Guest Banner -->
         <div id="guestBanner" class="guest-banner" style="display:none;">
-            <span>Conversations won't be saved.</span>
+            <span>You’re currently in Guest Mode. Conversations won’t be saved.</span>
             <button id="bannerSignupBtn" class="banner-btn">Sign Up Free</button>
             <button id="bannerDismissBtn" class="banner-dismiss" aria-label="Dismiss">✕</button>
         </div>
@@ -217,6 +217,59 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-sm btn-ghost" id="profileCancelBtn">Cancel</button>
                 <button type="button" class="btn btn-sm" id="profileSaveBtn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="deleteConfirm" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteConfirmTitle">
+            <div class="modal-header">
+                <h2 id="deleteConfirmTitle">Delete conversation</h2>
+                <button type="button" class="modal-close" id="deleteConfirmClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="confirm-text">Are you sure you want to delete this conversation?</p>
+                <p class="confirm-sub">This cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-ghost" id="deleteConfirmCancel">Cancel</button>
+                <button type="button" class="btn btn-sm btn-danger" id="deleteConfirmYes">Yes, delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="renameModal" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="renameModalTitle">
+            <div class="modal-header">
+                <h2 id="renameModalTitle">Rename conversation</h2>
+                <button type="button" class="modal-close" id="renameCloseBtn" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="renameInput">Conversation title</label>
+                    <input type="text" id="renameInput" maxlength="100" placeholder="Enter a title">
+                </div>
+                <div id="renameError" class="field-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-ghost" id="renameCancelBtn">Cancel</button>
+                <button type="button" class="btn btn-sm" id="renameConfirmBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="logoutConfirm" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="logoutConfirmTitle">
+            <div class="modal-header">
+                <h2 id="logoutConfirmTitle">Log out</h2>
+                <button type="button" class="modal-close" id="logoutConfirmClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="confirm-text">Are you sure you want to logout?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-ghost" id="logoutConfirmNo">No</button>
+                <button type="button" class="btn btn-sm btn-danger" id="logoutConfirmYes">Yes</button>
             </div>
         </div>
     </div>

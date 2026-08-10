@@ -60,6 +60,20 @@
     var profileError     = document.getElementById('profileError');
     var profileCancelBtn = document.getElementById('profileCancelBtn');
     var profileSaveBtn   = document.getElementById('profileSaveBtn');
+    var deleteConfirm    = document.getElementById('deleteConfirm');
+    var deleteConfirmClose = document.getElementById('deleteConfirmClose');
+    var deleteConfirmCancel = document.getElementById('deleteConfirmCancel');
+    var deleteConfirmYes = document.getElementById('deleteConfirmYes');
+    var renameModal      = document.getElementById('renameModal');
+    var renameCloseBtn   = document.getElementById('renameCloseBtn');
+    var renameInput      = document.getElementById('renameInput');
+    var renameCancelBtn  = document.getElementById('renameCancelBtn');
+    var renameConfirmBtn = document.getElementById('renameConfirmBtn');
+    var renameError      = document.getElementById('renameError');
+    var logoutConfirm    = document.getElementById('logoutConfirm');
+    var logoutConfirmClose = document.getElementById('logoutConfirmClose');
+    var logoutConfirmNo  = document.getElementById('logoutConfirmNo');
+    var logoutConfirmYes = document.getElementById('logoutConfirmYes');
 
     // ── Streaming Configuration ────────────────────────────────────────────────
     var streamingEnabled = false;
@@ -131,6 +145,9 @@
             closeSidebarDrawer();
             closeAccountPopup();
             closeProfileModal();
+            closeDeleteConfirm();
+            closeRenameModal();
+            closeLogoutConfirm();
         }
     });
 
@@ -398,7 +415,24 @@
         showWelcomeView();
     }
 
-    logoutBtn.addEventListener('click', logout);
+    function confirmLogout() {
+        logoutConfirm.hidden = false;
+    }
+
+    function closeLogoutConfirm() {
+        logoutConfirm.hidden = true;
+    }
+
+    logoutBtn.addEventListener('click', confirmLogout);
+    logoutConfirmYes.addEventListener('click', function () {
+        closeLogoutConfirm();
+        logout();
+    });
+    logoutConfirmNo.addEventListener('click', closeLogoutConfirm);
+    logoutConfirmClose.addEventListener('click', closeLogoutConfirm);
+    logoutConfirm.addEventListener('click', function (e) {
+        if (e.target === logoutConfirm) closeLogoutConfirm();
+    });
 
     // ── Google Sign-In ─────────────────────────────────────────────────────────
     var googleClientId = null;
@@ -960,28 +994,77 @@
         });
     }
 
-    async function renameConversation(id) {
+    var pendingRenameId = null;
+
+    function renameConversation(id) {
         var conv = activeConversations.find(function (c) { return String(c.id) === String(id); });
         if (!conv) return;
-        var newTitle = prompt('Rename conversation:', conv.title);
-        if (!newTitle || !newTitle.trim()) return;
-        newTitle = newTitle.trim();
+        pendingRenameId = id;
+        renameInput.value = conv.title || '';
+        renameError.textContent = '';
+        renameError.classList.remove('show');
+        renameModal.hidden = false;
+        renameInput.focus();
+        renameInput.select();
+    }
 
+    function closeRenameModal() {
+        renameModal.hidden = true;
+        pendingRenameId = null;
+    }
+
+    renameConfirmBtn.addEventListener('click', async function () {
+        var id = pendingRenameId;
+        var newTitle = renameInput.value.trim();
+        if (!newTitle) {
+            renameError.textContent = 'Please enter a title.';
+            renameError.classList.add('show');
+            renameInput.focus();
+            return;
+        }
+        closeRenameModal();
         try {
             await api('/conversations/' + id, {
                 method: 'PATCH',
                 body: JSON.stringify({ title: newTitle })
             });
-            conv.title = newTitle;
+            var conv = activeConversations.find(function (c) { return String(c.id) === String(id); });
+            if (conv) conv.title = newTitle;
             renderConversations();
         } catch (err) {
             alert('Rename failed: ' + err.message);
         }
+    });
+
+    renameCancelBtn.addEventListener('click', closeRenameModal);
+    renameCloseBtn.addEventListener('click', closeRenameModal);
+    renameModal.addEventListener('click', function (e) {
+        if (e.target === renameModal) closeRenameModal();
+    });
+    renameInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') renameConfirmBtn.click();
+    });
+
+    var pendingDeleteId = null;
+
+    function openDeleteConfirm(id) {
+        pendingDeleteId = id;
+        deleteConfirm.hidden = false;
     }
 
-    async function deleteConversation(id) {
-        if (!confirm('Delete this conversation? This cannot be undone.')) return;
+    function closeDeleteConfirm() {
+        deleteConfirm.hidden = true;
+        pendingDeleteId = null;
+    }
 
+    function deleteConversation(id) {
+        openDeleteConfirm(id);
+    }
+
+    deleteConfirmYes.addEventListener('click', async function () {
+        var id = pendingDeleteId;
+        closeDeleteConfirm();
+        if (id == null) return;
         try {
             await api('/conversations/' + id, { method: 'DELETE' });
             activeConversations = activeConversations.filter(function (c) {
@@ -995,7 +1078,13 @@
         } catch (err) {
             alert('Delete failed: ' + err.message);
         }
-    }
+    });
+
+    deleteConfirmCancel.addEventListener('click', closeDeleteConfirm);
+    deleteConfirmClose.addEventListener('click', closeDeleteConfirm);
+    deleteConfirm.addEventListener('click', function (e) {
+        if (e.target === deleteConfirm) closeDeleteConfirm();
+    });
 
     async function loadConversation(id) {
         if (isGuest) {
@@ -1134,8 +1223,12 @@
         if (isGuest) {
             items = accountPopupItem('login', 'Login', LOGIN_ICON);
         } else {
+            // The sidebar footer already shows a Logout button when expanded
+            // (and in the mobile drawer), so only offer Logout in the popup
+            // when the sidebar is collapsed on desktop.
+            var showLogout = sidebar.classList.contains('collapsed') && !isMobileView();
             items = accountPopupItem('profile', 'Profile', PROFILE_ICON) +
-                    accountPopupItem('logout', 'Logout', LOGOUT_ICON, 'danger');
+                    (showLogout ? accountPopupItem('logout', 'Logout', LOGOUT_ICON, 'danger') : '');
         }
         accountPopup.innerHTML = items;
     }
@@ -1193,8 +1286,10 @@
 
     // Mirrors shouldShowAccountPopup() into a class so the avatar can drop its
     // clickable affordance (cursor / hover ring) when the popup is suppressed.
+    // Also rebuilds the popup so Profile/Logout reflect the current sidebar state.
     function updateAvatarInteractivity() {
         userInfo.classList.toggle('popup-enabled', shouldShowAccountPopup());
+        if (!isGuest) buildAccountPopup();
     }
 
     function toggleAccountPopup() {
@@ -1245,7 +1340,7 @@
         if (action === 'profile') {
             openProfileModal();
         } else if (action === 'logout') {
-            logout();
+            confirmLogout();
         } else if (action === 'login') {
             showAuthView();
             showLoginTab();
