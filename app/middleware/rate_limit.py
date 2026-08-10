@@ -56,8 +56,7 @@ class InMemoryRateLimiter:
             # Remove entries older than 2 minutes
             cutoff = now - 120
             keys_to_remove = [
-                key for key, entry in self._store.items()
-                if entry.window_start < cutoff
+                key for key, entry in self._store.items() if entry.window_start < cutoff
             ]
             for key in keys_to_remove:
                 del self._store[key]
@@ -105,18 +104,31 @@ rate_limiter = InMemoryRateLimiter()
 
 
 def get_client_ip(request: Request) -> str:
-    """Extract client IP from request, handling proxies."""
-    # Check X-Forwarded-For header first (for reverse proxies)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Extract client IP from request.
 
-    # Check X-Real-IP header
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
+    Proxy headers (X-Forwarded-For / X-Real-IP) are only trusted when
+    TRUST_PROXY_HEADERS is enabled and the deployment is known to sit behind
+    a trusted reverse proxy (e.g. Render). When enabled, the RIGHTMOST
+    X-Forwarded-For entry is used — the value appended by the last trusted
+    proxy from the real TCP peer. Any values a client prepends on the left
+    are spoofable and therefore ignored.
 
-    # Fall back to direct client IP
+    When disabled (default), proxy headers are ignored entirely so clients
+    cannot spoof their apparent IP for rate limiting.
+    """
+    from app.core.config import get_settings
+
+    if get_settings().trust_proxy_headers:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+            if parts:
+                return parts[-1]
+
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+
     if request.client:
         return request.client.host
 

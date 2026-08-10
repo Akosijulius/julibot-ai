@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     rate_limit_auth: int = 10
     rate_limit_global: int = 100
 
+    # Proxy trust. Set to True ONLY when deployed behind a trusted reverse
+    # proxy (e.g. Render's load balancer). When True, rate limiting uses the
+    # rightmost X-Forwarded-For entry (the address the trusted proxy appended
+    # from the real TCP peer). Keep False when the app is exposed directly to
+    # the internet — otherwise clients can spoof X-Forwarded-For to bypass
+    # rate limits.
+    trust_proxy_headers: bool = False
+
     @property
     def allowed_origins_list(self) -> List[str]:
         """Parse ALLOWED_ORIGINS into a list (comma-separated or JSON array)."""
@@ -176,5 +184,14 @@ def get_settings() -> Settings:
         logger.warning(
             "GROQ_API_KEY not configured. Groq (fallback provider) is disabled."
         )
+
+    if settings.environment == "production":
+        dev_origins = {"null", "http://localhost", "http://127.0.0.1"}
+        allowed = {o.rstrip("/") for o in settings.allowed_origins_list}
+        if allowed & dev_origins:
+            logger.warning(
+                "ALLOWED_ORIGINS still contains development origins (localhost/null) "
+                "in production. Set ALLOWED_ORIGINS to your real deployed domain."
+            )
 
     return settings

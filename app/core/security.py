@@ -7,7 +7,8 @@ Handles password hashing, JWT token creation, and token validation.
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
@@ -28,7 +29,9 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    data: dict[str, Any], expires_delta: Optional[timedelta] = None
+) -> str:
     """
     Create a JWT access token.
 
@@ -53,7 +56,9 @@ def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta]
         )
 
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    encoded_jwt = jwt.encode(
+        to_encode, settings.secret_key, algorithm=settings.algorithm
+    )
 
     return encoded_jwt
 
@@ -69,7 +74,9 @@ def decode_access_token(token: str) -> Optional[dict[str, Any]]:
         Decoded payload if valid, None otherwise
     """
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.algorithm]
+        )
         return payload
-    except JWTError:
+    except InvalidTokenError:
         return None

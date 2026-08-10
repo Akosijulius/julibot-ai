@@ -2,6 +2,7 @@
 User schemas for request validation and response serialization.
 """
 
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -73,7 +74,11 @@ class UserProfileUpdate(BaseModel):
     @field_validator("profile_photo_url")
     @classmethod
     def validate_profile_photo(cls, v: Optional[str]) -> Optional[str]:
-        """Only accept image data URLs within a size limit."""
+        """Only accept raster image data URLs within a size limit.
+
+        Explicitly allows only raster formats (png/jpeg/webp/gif/avif). Vector
+        formats such as SVG can embed scripts and are not accepted.
+        """
         if v is None:
             return None
         v = v.strip()
@@ -81,6 +86,10 @@ class UserProfileUpdate(BaseModel):
             return None
         if not v.startswith("data:image/"):
             raise ValueError("Profile photo must be an image data URL")
+        if not re.match(
+            r"data:image/(png|jpe?g|webp|gif|avif);base64,", v, re.IGNORECASE
+        ):
+            raise ValueError("Profile photo must be a supported image format")
         if len(v) > MAX_PROFILE_PHOTO_LENGTH:
             raise ValueError("Profile photo is too large")
         return v

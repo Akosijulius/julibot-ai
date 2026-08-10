@@ -180,10 +180,16 @@
         // Escape HTML first
         var escaped = escapeHtml(content);
 
-        // Convert code blocks
+        // Protect code blocks so the markdown processing below can't touch
+        // their contents (e.g. "#" comments must not be stripped as headings)
+        var blocks = [];
         escaped = escaped.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
-            return '<pre class="code-block"><code class="language-' + lang + '">' + code.trim() + '</code></pre>';
+            blocks.push({ lang: lang, code: code.trim() });
+            return '\u0000' + (blocks.length - 1) + '\u0000';
         });
+
+        // Remove markdown heading markers (e.g. "### ") but keep the text
+        escaped = escaped.replace(/^#{1,6}\s+/gm, '');
 
         // Convert inline code
         escaped = escaped.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
@@ -197,8 +203,64 @@
         // Convert newlines to <br>
         escaped = escaped.replace(/\n/g, '<br>');
 
+        // Restore code blocks with an individual copy button on each
+        escaped = escaped.replace(/\u0000(\d+)\u0000/g, function(match, index) {
+            var b = blocks[parseInt(index, 10)];
+            return '<div class="code-block-wrap">' +
+                '<button class="code-copy-btn" type="button" title="Copy code" aria-label="Copy code">' +
+                    COPY_ICON + '<span class="copy-btn-label">Copy</span>' +
+                '</button>' +
+                '<pre class="code-block"><code class="language-' + b.lang + '">' + b.code + '</code></pre>' +
+            '</div>';
+        });
+
         return escaped;
     }
+
+    // ── Copy code block button ─────────────────────────────────────────────────
+    var COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                document.execCommand('copy');
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
+            document.body.removeChild(ta);
+        });
+    }
+
+    // Copy the code from whichever code block's button was clicked
+    document.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.code-copy-btn') : null;
+        if (!btn) return;
+        var wrap = btn.closest('.code-block-wrap');
+        var codeEl = wrap ? wrap.querySelector('code') : null;
+        var text = codeEl ? codeEl.textContent : '';
+        var label = btn.querySelector('.copy-btn-label');
+        copyToClipboard(text).then(function () {
+            btn.classList.add('copied');
+            if (label) label.textContent = 'Copied!';
+        }, function () {
+            if (label) label.textContent = 'Failed';
+        });
+        setTimeout(function () {
+            if (label) label.textContent = 'Copy';
+            btn.classList.remove('copied');
+        }, 2000);
+    });
 
     // ── API Client ─────────────────────────────────────────────────────────────
     async function api(endpoint, options) {

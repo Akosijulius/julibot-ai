@@ -58,9 +58,11 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)) ->
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
+        # Generic message on purpose — distinct "email/username taken" errors
+        # would let attackers enumerate which accounts already exist.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
+            detail="Registration failed. Please try again or log in.",
         )
 
     # Check if username already exists
@@ -68,7 +70,7 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)) ->
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken",
+            detail="Registration failed. Please try again or log in.",
         )
 
     # Create new user
@@ -133,14 +135,14 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
     try:
         import base64
 
-        from jose import jwt as jose_jwt
+        import jwt
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
 
         jwks = await _get_google_jwks()
 
         # Find the key that signed the token
-        header = jose_jwt.get_unverified_header(body.id_token)
+        header = jwt.get_unverified_header(body.id_token)
         kid = header.get("kid")
 
         google_key = jwks.get(kid)
@@ -166,14 +168,22 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
 
-        # Verify signature + expiry against our configured client ID
-        payload = jose_jwt.decode(
+        # Verify signature + expiry + issuer + audience against Google's claims.
+        # PyJWT validates `exp`, `iat`, `nbf`, `aud` and `iss` by default here.
+        payload = jwt.decode(
             body.id_token,
             pem,
             algorithms=["RS256"],
             audience=settings.google_client_id,
-            options={"verify_exp": True},
+            issuer="https://accounts.google.com",
         )
+
+        # Only accept tokens with a verified email address.
+        if str(payload.get("email_verified", "")).lower() != "true":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Google account email is not verified",
+            )
 
     except HTTPException:
         raise

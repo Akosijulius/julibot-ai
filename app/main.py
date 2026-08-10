@@ -77,6 +77,18 @@ app = FastAPI(
     description="Your Everyday AI Assistant - Faster, Smarter, More Versatile",
     version=settings.app_version,
     lifespan=lifespan,
+    # Hide the interactive API docs in production — they reveal the full API
+    # surface to attackers. Still available in development/staging.
+    docs_url=None if settings.environment == "production" else "/docs",
+    redoc_url=None if settings.environment == "production" else "/redoc",
+)
+
+# Security hardening headers (HSTS only in production)
+from app.middleware.security_headers import SecurityHeadersMiddleware
+
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=settings.environment == "production",
 )
 
 # CORS — allow local frontend origins during development

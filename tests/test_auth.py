@@ -43,7 +43,11 @@ async def test_register_password_mismatch(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_register_duplicate_email(client: AsyncClient, test_user):
-    """Registering with an existing email returns 400."""
+    """Registering with an existing email returns a generic 400.
+
+    The response must NOT reveal that the email specifically is taken —
+    that would let attackers enumerate registered accounts.
+    """
     response = await client.post(
         "/api/auth/register",
         json=register_payload(
@@ -52,12 +56,14 @@ async def test_register_duplicate_email(client: AsyncClient, test_user):
         ),
     )
     assert response.status_code == 400
-    assert "email" in response.json()["detail"].lower()
+    detail = response.json()["detail"].lower()
+    assert "email" not in detail
+    assert "registration failed" in detail
 
 
 @pytest.mark.asyncio
 async def test_register_duplicate_username(client: AsyncClient, test_user):
-    """Registering with an existing username returns 400."""
+    """Registering with an existing username returns a generic 400."""
     response = await client.post(
         "/api/auth/register",
         json=register_payload(
@@ -66,7 +72,9 @@ async def test_register_duplicate_username(client: AsyncClient, test_user):
         ),
     )
     assert response.status_code == 400
-    assert "username" in response.json()["detail"].lower()
+    detail = response.json()["detail"].lower()
+    assert "username" not in detail
+    assert "registration failed" in detail
 
 
 @pytest.mark.asyncio
