@@ -661,7 +661,7 @@
                                 '<div class="thinking-dot"></div>' +
                                 '<div class="thinking-dot"></div>' +
                             '</div>' +
-                            '<div class="thinking-label">Preparing a response…</div>' +
+                            '<div class="thinking-label">Preparing a response</div>' +
                         '</div>' +
                     '</div>' +
                 '</div>' +
