@@ -30,7 +30,9 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    data: dict[str, Any], expires_delta: Optional[timedelta] = None
+    data: dict[str, Any],
+    expires_delta: Optional[timedelta] = None,
+    jti: Optional[str] = None,
 ) -> str:
     """
     Create a JWT access token.
@@ -38,6 +40,9 @@ def create_access_token(
     Args:
         data: Payload to encode in the token (usually user identifier)
         expires_delta: Optional custom expiration time
+        jti: Optional JWT ID used to link this token to a server-side Session
+            record so it can be revoked on logout. Tokens without a jti are
+            validated statelessly (used by tests / internal tools).
 
     Returns:
         Encoded JWT token string
@@ -56,6 +61,8 @@ def create_access_token(
         )
 
     to_encode.update({"exp": expire})
+    if jti:
+        to_encode["jti"] = jti
     encoded_jwt = jwt.encode(
         to_encode, settings.secret_key, algorithm=settings.algorithm
     )

@@ -265,6 +265,12 @@ Response (streaming or complete)
 - **Input validation** on all endpoints
 - **Configuration validation** at startup
 
+## Documentation
+
+- **[PRODUCTION.md](PRODUCTION.md)** — deployment, configuration, security
+  checklist, operations, scaling, and troubleshooting.
+- **[SECURITY.md](SECURITY.md)** — threat model and security design.
+
 ## Development
 
 ### Code Quality

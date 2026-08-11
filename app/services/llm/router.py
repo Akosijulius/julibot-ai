@@ -74,6 +74,15 @@ class CircuitBreaker:
         self._state = "closed"
         self._last_failure_time = 0
 
+    def status(self) -> dict:
+        """Return a snapshot of the breaker for observability."""
+        return {
+            "state": self.state,
+            "failure_count": self._failure_count,
+            "failure_threshold": self.failure_threshold,
+            "recovery_seconds": self.recovery_seconds,
+        }
+
 
 class ProviderRouter:
     """
@@ -158,6 +167,23 @@ class ProviderRouter:
                     }
                 )
         return models
+
+    def status(self) -> dict:
+        """Return provider + circuit state for observability."""
+        return {
+            "primary": {
+                "name": self._primary.name if self._primary else None,
+                "circuit": (
+                    self._primary_breaker.status() if self._primary else None
+                ),
+            },
+            "fallback": {
+                "name": self._fallback.name if self._fallback else None,
+                "circuit": (
+                    self._fallback_breaker.status() if self._fallback else None
+                ),
+            },
+        }
 
     def _build_fallback_request(self, request: GenerateRequest) -> GenerateRequest:
         """Rebuild a request pointed at the fallback provider's model."""

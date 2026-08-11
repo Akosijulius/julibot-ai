@@ -6,17 +6,19 @@ import secrets
 from time import time
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_auth
 from app.core.config import get_settings
-from app.core.security import create_access_token, get_password_hash, verify_password
+from app.core.security import get_password_hash, verify_password
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas import Token, UserCreate, UserLogin, UserProfileUpdate, UserResponse
 from app.schemas.user import GoogleLoginRequest
+from app.services.account_service import delete_account
+from app.services.auth_service import clear_access_cookie, issue_session, revoke_all_user_sessions, revoke_session, set_access_cookie
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 settings = get_settings()
@@ -89,11 +91,20 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)) ->
 
 
 @router.post("/login", response_model=Token)
-async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)) -> dict:
+async def login(
+    user_data: UserLogin,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """
     Authenticate a user and return a JWT token.
 
     The `login` field accepts either the user's email OR their username.
+
+    On success the token is set as an HttpOnly cookie (for the browser) AND
+    returned in the body (for API clients). A server-side Session is created
+    so the token can be revoked on logout.
     """
     # Find user by email OR username
     result = await db.execute(
@@ -117,20 +128,26 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)) -> dic
             detail="Account is inactive",
         )
 
-    # Create access token
-    access_token = create_access_token(data={"sub": user.id})
+    access_token, _session = await issue_session(db, user, request)
+    set_access_cookie(response, access_token)
 
     user_resp = UserResponse.model_validate(user)
     return {"access_token": access_token, "token_type": "bearer", "user": user_resp}
 
 
 @router.post("/google", response_model=Token)
-async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_db)) -> dict:
+async def google_login(
+    body: GoogleLoginRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """
     Sign in with a Google ID token.
 
     Validates the token against Google's JWKS endpoint, then either logs in
-    an existing user or creates a new one.
+    an existing user or creates a new one. Sets the access-token HttpOnly
+    cookie on success.
     """
     try:
         import base64
@@ -170,12 +187,18 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
 
         # Verify signature + expiry + issuer + audience against Google's claims.
         # PyJWT validates `exp`, `iat`, `nbf`, `aud` and `iss` by default here.
+        # `leeway` tolerates small clock skew: Google can issue a token whose
+        # `iat` is a few seconds ahead of this server's clock, which otherwise
+        # raises ImmatureSignatureError ("The token is not yet valid (iat)").
+        # The skew window is bounded and small, so expiry is not meaningfully
+        # weakened. Signature, audience, issuer and exp remain strictly checked.
         payload = jwt.decode(
             body.id_token,
             pem,
             algorithms=["RS256"],
             audience=settings.google_client_id,
             issuer="https://accounts.google.com",
+            leeway=30,
         )
 
         # Only accept tokens with a verified email address.
@@ -227,11 +250,42 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
         await db.commit()
         await db.refresh(user)
 
-    # Create access token
-    access_token = create_access_token(data={"sub": user.id})
-    user_resp = UserResponse.model_validate(user)
+    access_token, _session = await issue_session(db, user, request)
+    set_access_cookie(response, access_token)
 
+    user_resp = UserResponse.model_validate(user)
     return {"access_token": access_token, "token_type": "bearer", "user": user_resp}
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    response: Response,
+    current_user: User = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Log out the current session: revoke the server-side session and clear the
+    access-token cookie. After this, the current token is invalid.
+    """
+    jti = getattr(request.state, "jti", None)
+    if jti:
+        await revoke_session(db, jti)
+    clear_access_cookie(response)
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all(
+    response: Response,
+    current_user: User = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Log out every session for the current user (all devices). Clears the
+    current cookie and revokes all server-side sessions.
+    """
+    await revoke_all_user_sessions(db, current_user.id)
+    clear_access_cookie(response)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -263,3 +317,20 @@ async def update_current_user_info(
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_current_account(
+    response: Response,
+    current_user: User = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Permanently delete the authenticated user's account and all their data.
+
+    Removes conversations, messages, sessions, and usage rows in one
+    transaction, then clears the access-token cookie. After this the user
+    cannot log back in and must re-register.
+    """
+    await delete_account(db, current_user)
+    clear_access_cookie(response)

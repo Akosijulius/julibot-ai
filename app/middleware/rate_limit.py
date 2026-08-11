@@ -8,13 +8,12 @@ For multi-instance production, replace with Redis-backed solution.
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Tuple
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.core.exceptions import RateLimitException
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -139,15 +138,32 @@ def get_user_id_or_ip(request: Request) -> str:
     """
     Get user ID if authenticated, otherwise fall back to IP.
 
-    This allows per-user rate limiting for authenticated requests.
+    Allows per-user rate limiting for authenticated requests. The user id is
+    decoded from the token (Authorization header or HttpOnly cookie) without
+    a DB round-trip, so per-user limits are respected even though auth
+    dependencies run later in the request lifecycle.
     """
-    # Check if user is authenticated (set by auth middleware)
-    user_id = getattr(request.state, "user_id", None)
-    if user_id:
-        return f"user:{user_id}"
+    token = _token_from_request(request)
+    if token:
+        from app.core.security import decode_access_token
 
-    # Fall back to IP-based limiting
+        payload = decode_access_token(token)
+        if payload:
+            raw = payload.get("sub")
+            try:
+                return f"user:{int(raw)}"
+            except (TypeError, ValueError):
+                pass
+
     return f"ip:{get_client_ip(request)}"
+
+
+def _token_from_request(request: Request) -> str | None:
+    """Read the access token from the Authorization header or HttpOnly cookie."""
+    auth = request.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return request.cookies.get("julibot_access")
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -163,16 +179,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         chat_limit: int = 20,
         auth_limit: int = 10,
         global_limit: int = 100,
+        import_limit: int = 10,
     ):
         super().__init__(app)
         self.chat_limit = chat_limit
         self.auth_limit = auth_limit
         self.global_limit = global_limit
+        self.import_limit = import_limit
 
         # Define rate limit configs per endpoint pattern
         self.endpoint_limits: Dict[str, RateLimitConfig] = {
             "/api/conversations/chat": RateLimitConfig(
                 requests_per_minute=chat_limit,
+                key_func=get_user_id_or_ip,
+            ),
+            "/api/conversations/import": RateLimitConfig(
+                requests_per_minute=import_limit,
                 key_func=get_user_id_or_ip,
             ),
             "/api/auth/login": RateLimitConfig(
@@ -257,6 +279,7 @@ def setup_rate_limiting(app: FastAPI) -> None:
         chat_limit=settings.rate_limit_chat,
         auth_limit=settings.rate_limit_auth,
         global_limit=settings.rate_limit_global,
+        import_limit=settings.rate_limit_import,
     )
 
     logger.info(
@@ -265,5 +288,6 @@ def setup_rate_limiting(app: FastAPI) -> None:
             "chat_limit": settings.rate_limit_chat,
             "auth_limit": settings.rate_limit_auth,
             "global_limit": settings.rate_limit_global,
+            "import_limit": settings.rate_limit_import,
         },
     )

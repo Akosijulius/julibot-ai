@@ -5,21 +5,20 @@ Supports both authenticated users and guests. Guest conversations are handled
 in-memory by the frontend (localStorage) and don't persist in the database.
 """
 
-import asyncio
 import json
-from datetime import datetime
 from typing import AsyncIterator, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.config import get_settings
+from app.core.time import utcnow
 from app.core.exceptions import AIException
 from app.core.logging import get_logger
 from app.db.database import async_session_maker, get_db
-from app.models.conversation import Conversation
+from app.models.conversation import Conversation, Message
 from app.models.user import User
 from app.schemas.conversation import (
     ChatRequest,
@@ -33,6 +32,7 @@ from app.schemas.conversation import (
 )
 from app.services.ai_orchestrator import ChatContext, get_orchestrator
 from app.services.chat_service import ChatService
+from app.services.quota import check_quota, record_usage
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 logger = get_logger(__name__)
@@ -52,6 +52,20 @@ def _guest_denied():
     )
 
 
+async def _enforce_quota(db: AsyncSession, user) -> None:
+    """Enforce daily AI quota, mapping a quota violation to HTTP 429."""
+    from app.core.exceptions import RateLimitException
+
+    try:
+        await check_quota(db, user)
+    except RateLimitException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.message,
+            headers={"Retry-After": "3600"},
+        ) from exc
+
+
 @router.post("/", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
 async def create_conversation(
     conv_data: ConversationCreate,
@@ -68,16 +82,25 @@ async def create_conversation(
 
 @router.get("/", response_model=List[ConversationListResponse])
 async def list_conversations(
-    skip: int = 0,
-    limit: int = 50,
+    response: Response,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> List[ConversationListResponse]:
-    """List conversations. Returns empty list for guests."""
+    """
+    List conversations (paginated).
+
+    Returns an array of conversations (backward compatible). The
+    ``X-Total-Count`` response header exposes the user's full count for
+    clients that implement infinite-scroll or page-based pagination.
+    """
     if _is_guest(current_user):
         return []
     chat_service = ChatService(db)
     conversations = await chat_service.get_user_conversations(current_user, skip, limit)
+    total = await chat_service.count_user_conversations(current_user.id)
+    response.headers["X-Total-Count"] = str(total)
     return [ConversationListResponse.model_validate(c) for c in conversations]
 
 
@@ -92,7 +115,9 @@ async def get_conversation(
     if _is_guest(current_user):
         raise _guest_denied()
     chat_service = ChatService(db)
-    conversation = await chat_service.get_conversation(conversation_id, current_user)
+    conversation = await chat_service.get_conversation(
+        conversation_id, current_user, message_limit=message_limit
+    )
 
     if not conversation:
         raise HTTPException(
@@ -114,7 +139,7 @@ async def update_conversation(
     if _is_guest(current_user):
         raise _guest_denied()
     chat_service = ChatService(db)
-    conversation = await chat_service.get_conversation(conversation_id, current_user)
+    conversation = await chat_service.get_conversation(conversation_id, current_user, message_limit=0)
 
     if not conversation:
         raise HTTPException(
@@ -136,7 +161,7 @@ async def delete_conversation(
     if _is_guest(current_user):
         raise _guest_denied()
     chat_service = ChatService(db)
-    conversation = await chat_service.get_conversation(conversation_id, current_user)
+    conversation = await chat_service.get_conversation(conversation_id, current_user, message_limit=0)
 
     if not conversation:
         raise HTTPException(
@@ -162,16 +187,18 @@ async def import_conversation(
     if _is_guest(current_user):
         raise _guest_denied()
 
-    chat_service = ChatService(db)
-    conversation = await chat_service.create_conversation(
-        current_user,
-        ConversationCreate(title=import_data.title),
-    )
+    # Bulk insert in a single transaction — no per-message commit. List length
+    # and total size are already bounded by the ConversationImport schema.
+    conversation = Conversation(user_id=current_user.id, title=import_data.title)
+    db.add(conversation)
+    await db.flush()  # assign conversation.id without committing yet
 
-    for msg in import_data.messages:
-        await chat_service.add_message(
-            conversation, role=msg.role, content=msg.content
-        )
+    messages = [
+        Message(conversation_id=conversation.id, role=m.role, content=m.content)
+        for m in import_data.messages
+    ]
+    db.add_all(messages)
+    await db.commit()
 
     # Reload the messages collection (identity map may hold a stale empty list)
     await db.refresh(conversation, attribute_names=["messages"])
@@ -192,7 +219,7 @@ async def _generate_title_background(
             # Update conversation in DB
             chat_service = ChatService(db)
             from app.schemas.conversation import ConversationUpdate
-            conversation = await chat_service.get_conversation(conversation_id, user_id)
+            conversation = await chat_service.get_conversation(conversation_id, user_id, message_limit=0)
             if conversation:
                 await chat_service.update_conversation(
                     conversation,
@@ -244,13 +271,14 @@ async def send_chat_message(
                 conversation_id=conv_id,
                 role="assistant",
                 content=ai_response_text,
-                created_at=datetime.utcnow(),
+                created_at=utcnow(),
             ),
             conversation_id=conv_id,
         )
 
     # ── Registered user: full persistence ───────────────────────────────────
     chat_service = ChatService(db)
+    await _enforce_quota(db, current_user)
 
     # Get or create conversation
     conversation: Optional[Conversation] = None
@@ -274,14 +302,19 @@ async def send_chat_message(
         )
         is_new_conversation = True
 
-    # Add user message
+    # Add user message (committed immediately for durability — the user typed
+    # this and it must survive even if the AI call or assistant commit fails).
     await chat_service.add_message(
         conversation, role="user", content=chat_request.message
     )
 
-    # Reload conversation with messages
-    await db.refresh(conversation)
-    conversation = await chat_service.get_conversation(conversation.id, current_user)
+    # Reload conversation with a bounded message count for the AI context
+    # window. The context manager internally caps to max_history_messages (20),
+    # so a modest over-fetch avoids loading thousands of rows from long chats.
+    _history_limit = settings.max_history_messages + 20
+    conversation = await chat_service.get_conversation(
+        conversation.id, current_user, message_limit=_history_limit
+    )
 
     if not conversation:
         raise HTTPException(
@@ -312,8 +345,22 @@ async def send_chat_message(
         # Log error but provide user-friendly message
         logger.error(f"AI error in chat: {e.code} - {e.message}")
         ai_response_text = f"[Error] {e.message}"
+        result = None
 
-    # Add AI response message
+    # Record AI usage toward the daily quota. The request is always counted so
+    # a user cannot dodge their quota by forcing errors; token figures come from
+    # the provider's usage report when present. Staged without committing so
+    # the assistant-message commit below persists usage + message atomically.
+    usage = getattr(result, "usage", None) or {}
+    await record_usage(
+        db,
+        current_user,
+        input_tokens=usage.get("prompt_tokens", 0),
+        output_tokens=usage.get("completion_tokens", 0),
+        commit=False,
+    )
+
+    # Add AI response message (commit=True also flushes the staged record_usage).
     ai_message = await chat_service.add_message(
         conversation, role="assistant", content=ai_response_text
     )
@@ -381,7 +428,7 @@ async def send_chat_message_stream(
                                 "conversation_id": conv_id,
                                 "role": "assistant",
                                 "content": "".join(full_content),
-                                "created_at": datetime.utcnow().isoformat(),
+                                "created_at": utcnow().isoformat(),
                             },
                             "conversation_id": conv_id,
                         }
@@ -389,7 +436,7 @@ async def send_chat_message_stream(
 
             except AIException as e:
                 yield f"data: {json.dumps({'type': 'error', 'error': e.message, 'code': e.code})}\n\n"
-            except Exception as e:
+            except Exception:
                 logger.exception("Unexpected streaming error for guest")
                 yield f"data: {json.dumps({'type': 'error', 'error': 'An unexpected error occurred'})}\n\n"
             return
@@ -417,14 +464,16 @@ async def send_chat_message_stream(
             )
             is_new_conversation = True
 
-        # Add user message
+        # Add user message (committed immediately for durability).
         await chat_service.add_message(
             conversation, role="user", content=chat_request.message
         )
 
-        # Reload conversation
-        await db.refresh(conversation)
-        conversation = await chat_service.get_conversation(conversation.id, current_user)
+        # Reload conversation with a bounded message count for the AI context.
+        _history_limit = settings.max_history_messages + 20
+        conversation = await chat_service.get_conversation(
+            conversation.id, current_user, message_limit=_history_limit
+        )
 
         if not conversation:
             error_data = json.dumps({"type": "error", "error": "Failed to load conversation"})
@@ -433,6 +482,8 @@ async def send_chat_message_stream(
 
         # Build history (excluding the user message we just added)
         history = conversation.messages[:-1] if conversation.messages else []
+
+        await _enforce_quota(db, current_user)
 
         full_content = []
 
@@ -452,6 +503,15 @@ async def send_chat_message_stream(
                 if chunk.is_final:
                     # Save the complete message
                     ai_content = "".join(full_content)
+
+                    # Record usage (staged, not committed) then add the assistant
+                    # message — commit=True persists both atomically.
+                    await record_usage(
+                        db,
+                        current_user,
+                        output_tokens=len(ai_content) // 4,
+                        commit=False,
+                    )
                     ai_message = await chat_service.add_message(
                         conversation, role="assistant", content=ai_content
                     )
@@ -482,7 +542,7 @@ async def send_chat_message_stream(
         except AIException as e:
             logger.error(f"AI streaming error: {e.code} - {e.message}")
             yield f"data: {json.dumps({'type': 'error', 'error': e.message, 'code': e.code})}\n\n"
-        except Exception as e:
+        except Exception:
             logger.exception("Unexpected streaming error")
             yield f"data: {json.dumps({'type': 'error', 'error': 'An unexpected error occurred'})}\n\n"
 

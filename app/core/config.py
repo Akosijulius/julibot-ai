@@ -6,12 +6,11 @@ All sensitive values come from environment variables with validation.
 
 import json
 import logging
-import os
 from functools import lru_cache
 from typing import List, Literal, Optional
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +30,11 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite:///./julibot.db"
+
+    # PostgreSQL pool sizing (ignored when using SQLite). pool_pre_ping is
+    # always enabled in app/db/database.py to discard stale connections.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
 
     # Security
     secret_key: str = Field(default="CHANGE-ME-IN-PRODUCTION")
@@ -78,6 +82,33 @@ class Settings(BaseSettings):
     rate_limit_chat: int = 20
     rate_limit_auth: int = 10
     rate_limit_global: int = 100
+    rate_limit_import: int = 10
+
+    # Request limits
+    # Reject request bodies larger than this (guards against oversized JSON
+    # payloads / unbounded imports). Keep comfortably above the largest legit
+    # body (profile photo data URLs, conversation imports).
+    max_body_size_bytes: int = 5_000_000
+
+    # AI generation cap — hard ceiling on per-response output tokens for a
+    # single interactive turn, regardless of what a model advertises.
+    max_output_tokens: int = 4096
+
+    # Per-user daily AI usage quotas (quota foundation for guest/free/pro plans).
+    quota_enabled: bool = True
+    quota_daily_requests: int = 200          # registered user, requests/day
+    quota_daily_output_tokens: int = 500_000 # registered user, output tokens/day
+    quota_guest_daily_requests: int = 50     # guest, requests/day
+    quota_guest_daily_output_tokens: int = 50_000
+
+    # ── Data retention (privacy) ──────────────────────────────────────────────
+    # How long to keep non-essential data before the background retention task
+    # purges it. Sessions (login records) and daily usage aggregates are not
+    # needed forever; conversation/message content is only removed on explicit
+    # account deletion (DELETE /auth/me).
+    session_retention_days: int = 30
+    usage_retention_days: int = 365
+    retention_interval_minutes: int = 60
 
     # Proxy trust. Set to True ONLY when deployed behind a trusted reverse
     # proxy (e.g. Render's load balancer). When True, rate limiting uses the
@@ -153,10 +184,11 @@ class Settings(BaseSettings):
         """Check if running in development environment."""
         return self.environment == "development"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 @lru_cache

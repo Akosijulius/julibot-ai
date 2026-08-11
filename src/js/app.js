@@ -5,7 +5,11 @@
     var API_BASE = '/api';
 
     // ── State ──────────────────────────────────────────────────────────────────
-    var token = localStorage.getItem('token');
+    // Auth is carried by an HttpOnly cookie set by the backend on login. It is
+    // invisible to JS and sent automatically on same-origin requests, so no
+    // client-side token is stored. `token` stays a null placeholder for a few
+    // legacy references below.
+    var token = null;
     var currentUser = null;
     var isGuest = false;
     var currentConversationId = null;
@@ -279,17 +283,44 @@
         }, 2000);
     });
 
+    // ── Delegated handlers (no inline on* attributes — required by CSP) ──────
+    // Buttons carrying data-action. Set in capture phase so dynamically
+    // inserted elements (rendered messages, error banners) are covered too.
+    document.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
+        if (!btn) return;
+        var action = btn.getAttribute('data-action');
+        if (action === 'retry') {
+            if (window._retryLastMessage) window._retryLastMessage();
+        } else if (action === 'reload') {
+            window.location.reload();
+        }
+    }, true);
+
+    // Fallback for missing image assets: `data-img-fallback="hide"` hides the
+    // broken <img>; `data-img-fallback="brand"` marks the brand mark to render
+    // its text/icon fallback. Capture phase covers dynamically added images.
+    document.addEventListener('error', function (e) {
+        var target = e.target;
+        if (!target || target.tagName !== 'IMG') return;
+        var fallback = target.getAttribute('data-img-fallback');
+        if (fallback === 'hide') {
+            target.style.display = 'none';
+        } else if (fallback === 'brand') {
+            var mark = target.closest('.brand-mark');
+            if (mark) mark.classList.add('no-img');
+        }
+    }, true);
+
     // ── API Client ─────────────────────────────────────────────────────────────
     async function api(endpoint, options) {
         options = options || {};
         var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers);
 
-        if (token) {
-            headers['Authorization'] = 'Bearer ' + token;
-        }
-
+        // Same-origin so the HttpOnly auth cookie is sent automatically.
         var response = await fetch(API_BASE + endpoint, Object.assign({}, options, {
-            headers: headers
+            headers: headers,
+            credentials: 'same-origin'
         }));
 
         if (!response.ok) {
@@ -395,8 +426,7 @@
     });
 
     function onAuthenticated(data) {
-        token = data.access_token;
-        localStorage.setItem('token', token);
+        // No client-side token to store — the backend set an HttpOnly cookie.
         isGuest = false;
         currentUser = data.user || null;
         initializeApp();
@@ -405,13 +435,13 @@
     function logout() {
         // Invalidate any in-flight session validation, then reset all session state
         appSessionVersion++;
-        token = null;
         currentUser = null;
         isGuest = false;
         currentConversationId = null;
         guestConversations = [];
         activeConversations = [];
-        localStorage.removeItem('token');
+        // Revoke the server-side session and clear the HttpOnly cookie.
+        api('/auth/logout', { method: 'POST' }).catch(function () {});
         showWelcomeView();
     }
 
@@ -530,10 +560,13 @@
         // auth state so guest requests are NOT authenticated as a real user
         // (and guest conversations are never saved to someone's account).
         appSessionVersion++;
-        token = null;
         currentUser = null;
         currentConversationId = null;
-        localStorage.removeItem('token');
+
+        // Ensure guest mode is truly unauthenticated: clear any HttpOnly session
+        // cookie so requests are NOT sent as a logged-in user. No-ops for a
+        // genuine guest (the endpoint 401s without a session).
+        api('/auth/logout', { method: 'POST' }).catch(function () {});
 
         isGuest = true;
         guestConversations = [];
@@ -569,7 +602,7 @@
     function showEmptyState() {
         messagesContainer.innerHTML =
             '<div class="empty-state" id="emptyState">' +
-                '<img src="assets/julibot-logo-v2.png?v=2" height="110" alt="JULIBOT" class="logo" onerror="this.style.display=\'none\'">' +
+                '<img src="assets/julibot-logo-v2.png?v=2" height="110" alt="JULIBOT" class="logo" data-img-fallback="hide">' +
                 '<h2>Welcome to JULIBOT</h2>' +
                 '<p class="tagline">How may I help you today?</p>' +
             '</div>';
@@ -650,7 +683,7 @@
                     '<span class="message-error-icon">⚠</span>' +
                     '<div>' +
                         '<div class="message-error-text">' + escapeHtml(err.message) + '</div>' +
-                        '<button class="message-error-retry" onclick="window._retryLastMessage()">Try again</button>' +
+                        '<button class="message-error-retry" data-action="retry">Try again</button>' +
                     '</div>' +
                 '</div>';
         } finally {
@@ -694,10 +727,9 @@
         // Thinking indicator stays visible until first content arrives
 
         // Stream via POST + fetch, parsing SSE from the response body.
-        // EventSource only supports GET, but the backend stream endpoint is POST
-        // (and needs the Authorization header for registered users).
+        // EventSource only supports GET, but the backend stream endpoint is POST.
+        // Auth is carried by the HttpOnly cookie (same-origin request).
         var headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = 'Bearer ' + token;
 
         var fetchAbort = new AbortController();
         abortController = { abort: function() { fetchAbort.abort(); } };
@@ -706,6 +738,7 @@
             var response = await fetch(API_BASE + '/conversations/chat/stream', {
                 method: 'POST',
                 headers: headers,
+                credentials: 'same-origin',
                 body: JSON.stringify({
                     message: message,
                     conversation_id: isGuest ? null : (currentConversationId || null)
@@ -1522,10 +1555,8 @@
         } catch (err) {
             if (myVersion !== appSessionVersion) return; // superseded
             console.warn('Session validation failed:', err);
-            token = null;
             currentUser = null;
             isGuest = false;
-            localStorage.removeItem('token');
             showWelcomeView();
         }
     }
@@ -1587,7 +1618,7 @@
                     'python run.py\n' +
                     '# then open  http://localhost:8000' +
                 '</pre>' +
-                '<button onclick="location.reload()" style="' +
+                '<button data-action="reload" style="' +
                     'padding:10px 24px;background:#4f7cff;color:#fff;border:none;' +
                     'border-radius:8px;font-size:14px;cursor:pointer;' +
                     'transition:background .15s;">' +
@@ -1620,10 +1651,9 @@
     checkStreamingConfig();  // Check if streaming is enabled
     checkServerConnection();  // Detect unreachable-server state
 
-    if (token) {
-        initializeApp();
-    } else {
-        showWelcomeView();
-    }
+    // Boot: auth state is only knowable server-side (HttpOnly cookie), so ask
+    // /auth/me. initializeApp shows the chat view for a valid session and the
+    // welcome view for guests/unauthenticated visitors.
+    initializeApp();
 
 })();

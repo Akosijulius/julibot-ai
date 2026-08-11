@@ -12,14 +12,14 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-# The app still uses a few self-controlled inline handlers (e.g. image
-# `onerror` fallbacks, the retry button in app.js), so script-src includes
-# 'unsafe-inline'. None of them process user-supplied data. The remaining
-# directives (frame-ancestors, object-src, base-uri, form-action, connect-src,
-# img-src) still provide meaningful hardening on top of the app's HTML escaping.
+# No inline scripts or inline event handlers remain (image onerror fallbacks and
+# retry/reload buttons were moved to delegated JS listeners), so script-src does
+# not need 'unsafe-inline'. Google's OAuth script is allow-listed explicitly.
+# style-src keeps 'unsafe-inline' because the app styles dynamically-generated
+# DOM via style attributes; styles are not an XSS vector.
 CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://accounts.google.com; "
+    "script-src 'self' https://accounts.google.com; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: https:; "
     "font-src 'self' data:; "

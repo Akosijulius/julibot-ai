@@ -7,7 +7,7 @@ Enables model routing, fallbacks, and provider-agnostic AI operations.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 
 class ModelCapability(str, Enum):

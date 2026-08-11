@@ -5,7 +5,7 @@ Conversation and message schemas for request validation and response serializati
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MessageBase(BaseModel):
@@ -28,8 +28,7 @@ class MessageResponse(MessageBase):
     conversation_id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationBase(BaseModel):
@@ -60,8 +59,7 @@ class ConversationResponse(ConversationBase):
     messages: List[MessageResponse] = []
     summary: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationListResponse(BaseModel):
@@ -73,8 +71,7 @@ class ConversationListResponse(BaseModel):
     updated_at: datetime
     message_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatRequest(BaseModel):
@@ -93,11 +90,30 @@ class ImportMessage(BaseModel):
     content: str = Field(..., min_length=1, max_length=50000)
 
 
+# Hard limits on conversation import to prevent resource-exhaustion abuse.
+MAX_IMPORT_MESSAGES = 200
+MAX_IMPORT_TOTAL_CHARS = 1_000_000
+
+
 class ConversationImport(BaseModel):
-    """Schema for importing a conversation with its full message history."""
+    """Schema for importing a conversation with its full message history.
+
+    Bounds are enforced here (list length, total content size) and the handler
+    bulk-inserts in a single transaction.
+    """
 
     title: str = Field(..., min_length=1, max_length=255)
-    messages: List[ImportMessage] = []
+    messages: List[ImportMessage] = Field(default_factory=list, max_length=MAX_IMPORT_MESSAGES)
+
+    @field_validator("messages")
+    @classmethod
+    def validate_total_size(cls, messages: List[ImportMessage]) -> List[ImportMessage]:
+        total = sum(len(m.content) for m in messages)
+        if total > MAX_IMPORT_TOTAL_CHARS:
+            raise ValueError(
+                f"Total imported content exceeds {MAX_IMPORT_TOTAL_CHARS} characters"
+            )
+        return messages
 
 
 class ChatResponse(BaseModel):

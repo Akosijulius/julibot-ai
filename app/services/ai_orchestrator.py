@@ -137,6 +137,9 @@ class AIOrchestrator:
             system_prompt=system_prompt,
             stream=stream,
             temperature=0.7,
+            # Hard cap on interactive responses so a single prompt cannot
+            # produce an unbounded (and unbilled) output.
+            max_tokens=settings.max_output_tokens,
         )
         return request, mode, context_window
 

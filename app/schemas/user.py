@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 # Max length for a profile photo data URL. Frontend resizes uploads to ~256px
 # before sending, so this is generous while still guarding against huge payloads.
@@ -50,8 +50,7 @@ class UserResponse(UserBase):
     display_name: Optional[str] = None
     profile_photo_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserProfileUpdate(BaseModel):

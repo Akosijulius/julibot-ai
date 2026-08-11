@@ -6,7 +6,6 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
 
 from app.db.database import Base
 from app.core.security import get_password_hash
@@ -81,12 +80,11 @@ def mock_ai_orchestrator(monkeypatch):
     Keeps tests offline, fast, and deterministic.
     """
     from app.services.ai_orchestrator import AIOrchestrator
-    from app.services.llm import StreamChunk, GenerateResponse
+    from app.services.llm import StreamChunk
 
     async def fake_chat(self, context):
         """Fake chat that returns a mock response."""
         from app.services.ai_orchestrator import ChatResult
-        from app.services.prompts import AssistantMode
         from app.services.context_manager import ContextWindow
         from app.services.llm import ChatMessage
 

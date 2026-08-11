@@ -7,7 +7,6 @@ conversations within model context limits.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import List, Optional, Tuple
 
 from app.core.config import get_settings
@@ -80,30 +79,45 @@ class ContextManager:
         self,
         messages: List[Message],
         keep_last_n: Optional[int] = None,
+        token_budget: Optional[int] = None,
     ) -> Tuple[List[Message], List[Message]]:
         """
         Prune messages to fit within limits.
 
+        First applies count-based pruning (``keep_last_n``), then if
+        ``token_budget`` is given, continues pruning the oldest remaining
+        messages until the estimated token count fits within the budget.
+
         Args:
             messages: Full message history
             keep_last_n: Number of recent messages to keep (default from config)
+            token_budget: Maximum estimated tokens for the kept messages
 
         Returns:
             (kept_messages, excluded_messages)
         """
         keep_last_n = keep_last_n or self.max_messages
 
-        if len(messages) <= keep_last_n:
-            return messages, []
+        # Phase 1: count-based pruning
+        if len(messages) > keep_last_n:
+            excluded = messages[:-keep_last_n]
+            kept = messages[-keep_last_n:]
+        else:
+            excluded, kept = [], list(messages)
 
-        # Keep the most recent messages
-        kept = messages[-keep_last_n:]
-        excluded = messages[:-keep_last_n]
+        # Phase 2: token-budget pruning — keep removing the oldest messages
+        # until the total fits within the budget.
+        if token_budget is not None and kept:
+            while self.estimate_messages_tokens(kept) > token_budget and len(kept) > 1:
+                excluded.append(kept.pop(0))
 
-        logger.debug(
-            f"Pruned {len(excluded)} messages from context",
-            extra={"kept": len(kept), "excluded": len(excluded)},
-        )
+        if excluded:
+            logger.debug(
+                "Pruned %d messages from context (kept %d, ~%d tokens)",
+                len(excluded),
+                len(kept),
+                self.estimate_messages_tokens(kept),
+            )
 
         return kept, excluded
 
@@ -124,8 +138,23 @@ class ContextManager:
         Returns:
             ContextWindow with properly formatted messages
         """
-        # Prune if needed
-        kept_messages, excluded = self.prune_messages(messages)
+        # Calculate overhead from system prompt + summary so we can subtract
+        # it from the token budget available for conversation messages.
+        overhead = 0
+        if system_prompt:
+            overhead += self.estimate_tokens(system_prompt)
+        if include_summary:
+            overhead += self.estimate_tokens(include_summary)
+        # Small buffer for the summary wrapper message (~10 tokens). Per-message
+        # formatting overhead is already added inside estimate_messages_tokens.
+        overhead += 10
+
+        # Prune if needed — apply both count and token-budget limits.
+        token_budget = max(0, self.max_tokens - overhead)
+        kept_messages, excluded = self.prune_messages(
+            messages,
+            token_budget=token_budget,
+        )
 
         # Build chat messages
         chat_messages: List[ChatMessage] = []

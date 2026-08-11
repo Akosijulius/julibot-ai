@@ -1,17 +1,14 @@
 """
-Google Gemini provider implementation (updated for 2.5 Flash).
+Google Gemini provider implementation (google-genai SDK).
 
-Uses the google-generativeai SDK (current version).
-Primary AI provider for JULIBOT — handles all task types.
-
-NOTE: google-generativeai was marked inactive Nov 2025 in favor of
-google-genai. Migration to the new SDK should be done when stability
-is confirmed. For now this works with the existing dependency.
+Uses the official ``google-genai`` client (successor to google-generativeai,
+which was deprecated Nov 2025). Primary AI provider for JULIBOT.
 """
 
 from typing import AsyncIterator, List, Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from app.core.config import get_settings
 from app.core.exceptions import (
@@ -41,7 +38,7 @@ settings = get_settings()
 class GeminiProvider(LLMProvider):
     """Google Gemini provider — primary AI provider for JULIBOT.
 
-    Uses google-generativeai SDK with Gemini 2.5 Flash as the default model.
+    Uses the ``google-genai`` SDK with Gemini 3.5 Flash as the default model.
     """
 
     name = "gemini"
@@ -90,56 +87,61 @@ class GeminiProvider(LLMProvider):
         self.configured = bool(self.api_key)
 
         if self.configured:
-            genai.configure(api_key=self.api_key)
+            self._client = genai.Client(api_key=self.api_key)
             logger.info("Gemini provider configured")
         else:
+            self._client = None
             logger.warning("Gemini provider not configured — missing API key")
 
     async def is_available(self) -> bool:
-        """Check if Gemini is configured."""
         return self.configured
 
     def _convert_messages(
         self,
         messages: List[ChatMessage],
         system_prompt: Optional[str] = None,
-    ) -> tuple[Optional[str], List[dict], Optional[str]]:
+    ) -> tuple[Optional[str], List[types.Content], Optional[str]]:
         """
-        Convert generic messages to Gemini chat format.
+        Convert generic messages to google-genai format.
 
         Returns:
-            (system_prompt, history, current_user_message)
+            (system_instruction, contents, last_user_message)
         """
-        system_parts = []
-        history = []
-        current_user_message = None
+        contents: List[types.Content] = []
+        system_instruction: Optional[str] = system_prompt
+        last_user_message: Optional[str] = None
 
         for i, msg in enumerate(messages):
             if msg.role == "system":
-                system_parts.append(msg.content)
+                # Multiple system messages are concatenated.
+                if system_instruction:
+                    system_instruction += "\n\n" + msg.content
+                else:
+                    system_instruction = msg.content
             elif msg.role == "user":
                 if i == len(messages) - 1:
-                    current_user_message = msg.content
+                    # The SDK accepts a plain string for the final user
+                    # message; we handle this in generate() directly.
+                    last_user_message = msg.content
                 else:
-                    history.append({"role": "user", "parts": [msg.content]})
+                    contents.append(
+                        types.Content(
+                            role="user",
+                            parts=[types.Part(text=msg.content)],
+                        )
+                    )
             elif msg.role == "assistant":
-                history.append({"role": "model", "parts": [msg.content]})
+                contents.append(
+                    types.Content(
+                        role="model",
+                        parts=[types.Part(text=msg.content)],
+                    )
+                )
 
-        combined_system = "\n\n".join(system_parts) if system_parts else None
-        if system_prompt:
-            combined_system = system_prompt
-
-        return combined_system, history, current_user_message
-
-    def _get_model(self, model_id: str, system_prompt: Optional[str] = None):
-        """Create Gemini model instance."""
-        return genai.GenerativeModel(
-            model_name=model_id,
-            system_instruction=system_prompt,
-        )
+        return system_instruction, contents, last_user_message
 
     def _map_error(self, error: Exception, model: str) -> AIException:
-        """Map Gemini errors to JULIBOT exceptions."""
+        """Map google-genai errors to JULIBOT exceptions."""
         error_str = str(error).lower()
 
         if "api_key" in error_str or "permission" in error_str or "401" in error_str:
@@ -186,44 +188,63 @@ class GeminiProvider(LLMProvider):
             recoverable=True,
         )
 
+    def _build_config(
+        self,
+        system_instruction: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> types.GenerateContentConfig:
+        kwargs: dict = {}
+        if system_instruction:
+            kwargs["system_instruction"] = system_instruction
+        if max_tokens:
+            kwargs["max_output_tokens"] = max_tokens
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return types.GenerateContentConfig(**kwargs)
+
     async def generate(self, request: GenerateRequest) -> GenerateResponse:
         """Generate a non-streaming response."""
-        if not self.configured:
+        if not self.configured or not self._client:
             raise AIOfflineError(
                 "JULIBOT is running in offline mode. Set GOOGLE_API_KEY to enable AI responses."
             )
 
         model_id = request.model or self.DEFAULT_MODEL
-        system_prompt, history, current_message = self._convert_messages(
+        system_instruction, history, last_user_msg = self._convert_messages(
             request.messages, request.system_prompt
         )
 
-        if not current_message:
+        if not last_user_msg:
             raise AIException("No user message provided", code="AI_INVALID_REQUEST")
 
         try:
-            model = self._get_model(model_id, system_prompt)
-            chat = model.start_chat(history=history)
-
-            generation_config = {}
-            if request.max_tokens:
-                generation_config["max_output_tokens"] = request.max_tokens
-            if request.temperature is not None:
-                generation_config["temperature"] = request.temperature
-
-            response = await chat.send_message_async(
-                current_message,
-                generation_config=generation_config or None,
+            config = self._build_config(
+                system_instruction=system_instruction,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
             )
 
-            content = response.text if hasattr(response, "text") else ""
+            # The SDK accepts a list of Content for history + a string for
+            # the final user message when the second positional argument is
+            # a string. We pass history as contents and the final message
+            # separately.
+            contents: list = history + [last_user_msg]
+
+            response = self._client.models.generate_content(
+                model=model_id,
+                contents=contents,
+                config=config,
+            )
+
+            content = response.text or ""
 
             usage = None
-            if hasattr(response, "usage_metadata") and response.usage_metadata:
+            if response.usage_metadata:
                 usage = {
-                    "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0) or 0,
-                    "completion_tokens": getattr(response.usage_metadata, "candidates_token_count", 0) or 0,
-                    "total_tokens": getattr(response.usage_metadata, "total_token_count", 0) or 0,
+                    "prompt_tokens": response.usage_metadata.prompt_token_count or 0,
+                    "completion_tokens": response.usage_metadata.candidates_token_count or 0,
+                    "total_tokens": response.usage_metadata.total_token_count or 0,
                 }
 
             return GenerateResponse(
@@ -234,6 +255,8 @@ class GeminiProvider(LLMProvider):
                 finish_reason="stop",
             )
 
+        except AIException:
+            raise
         except Exception as e:
             raise self._map_error(e, model_id) from e
 
@@ -242,42 +265,34 @@ class GeminiProvider(LLMProvider):
         request: GenerateRequest,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response."""
-        if not self.configured:
+        if not self.configured or not self._client:
             raise AIOfflineError(
                 "JULIBOT is running in offline mode. Set GOOGLE_API_KEY to enable AI responses."
             )
 
         model_id = request.model or self.DEFAULT_MODEL
-        system_prompt, history, current_message = self._convert_messages(
+        system_instruction, history, last_user_msg = self._convert_messages(
             request.messages, request.system_prompt
         )
 
-        if not current_message:
+        if not last_user_msg:
             raise AIException("No user message provided", code="AI_INVALID_REQUEST")
 
         try:
-            model = self._get_model(model_id, system_prompt)
-            chat = model.start_chat(history=history)
-
-            generation_config = {}
-            if request.max_tokens:
-                generation_config["max_output_tokens"] = request.max_tokens
-            if request.temperature is not None:
-                generation_config["temperature"] = request.temperature
-
-            response_stream = await chat.send_message_async(
-                current_message,
-                stream=True,
-                generation_config=generation_config or None,
+            config = self._build_config(
+                system_instruction=system_instruction,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
             )
 
-            async for chunk in response_stream:
-                text = ""
-                try:
-                    text = chunk.text
-                except Exception:
-                    continue
+            contents: list = history + [last_user_msg]
 
+            async for chunk in self._client.aio.models.generate_content_stream(
+                model=model_id,
+                contents=contents,
+                config=config,
+            ):
+                text = chunk.text or ""
                 if text:
                     yield StreamChunk(
                         content=text,
@@ -294,5 +309,7 @@ class GeminiProvider(LLMProvider):
                 finish_reason="stop",
             )
 
+        except AIException:
+            raise
         except Exception as e:
             raise self._map_error(e, model_id) from e

@@ -11,7 +11,7 @@
 
     <div id="welcomeContainer" class="auth-container">
         <div class="auth-card welcome-card">
-            <img src="assets/julibot-logo-v2.png?v=2" alt="JULIBOT" class="logo" onerror="this.style.display='none'">
+            <img src="assets/julibot-logo-v2.png?v=2" alt="JULIBOT" class="logo" data-img-fallback="hide">
             <h1>JULIBOT</h1>
             <p class="tagline">Welcome to JULIBOT — Your daily chat assistant</p>
 
@@ -23,7 +23,7 @@
 
     <div id="authContainer" class="auth-container" style="display:none;">
         <div class="auth-card">
-            <img src="assets/julibot-logo-v2.png?v=2" alt="JULIBOT" class="logo" onerror="this.style.display='none'">
+            <img src="assets/julibot-logo-v2.png?v=2" alt="JULIBOT" class="logo" data-img-fallback="hide">
             <h1>JULIBOT</h1>
             <p class="tagline">Your Everyday AI Assistant</p>
 
@@ -104,7 +104,7 @@
                 <div class="sidebar-header">
                     <div class="brand" id="brandItem">
                         <div class="brand-mark">
-                            <img src="assets/julibot-logo-v2.png?v=2" alt="JULIBOT" onerror="this.closest('.brand-mark').classList.add('no-img')">
+                            <img src="assets/julibot-logo-v2.png?v=2" alt="JULIBOT" data-img-fallback="brand">
                             <span class="brand-fallback">J</span>
                         </div>
                         <span class="brand-text">JULIBOT</span>
@@ -159,7 +159,7 @@
                 </button>
                 <div class="messages-container" id="messagesContainer">
                     <div class="empty-state" id="emptyState">
-                        <img src="assets/julibot-logo-v2.png?v=2" height="110" alt="JULIBOT" class="logo" onerror="this.style.display='none'">
+                        <img src="assets/julibot-logo-v2.png?v=2" height="110" alt="JULIBOT" class="logo" data-img-fallback="hide">
                         <h2>Welcome to JULIBOT</h2>
                         <p class="tagline">How may I help you today?</p>
                     </div>

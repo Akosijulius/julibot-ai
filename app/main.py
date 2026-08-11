@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import auth, conversations
+from app.api import auth, conversations, health
 from app.core.config import get_settings
 from app.core.exceptions import JulibotException
 from app.core.logging import get_logger, setup_logging
@@ -66,8 +66,15 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables initialized (development mode)")
 
+    # Start background data-retention cleanup (prunes stale sessions/usage).
+    from app.services.retention import retention_loop
+    retention_task = asyncio.create_task(
+        retention_loop(settings.retention_interval_minutes)
+    )
+
     yield
 
+    retention_task.cancel()
     logger.info("JULIBOT shutting down...")
     await engine.dispose()
 
@@ -104,6 +111,20 @@ app.add_middleware(
 from app.middleware.rate_limit import setup_rate_limiting
 setup_rate_limiting(app)
 
+# Request body size limit (hard guard against oversized payloads)
+from app.middleware.body_size import BodySizeLimitMiddleware
+
+app.add_middleware(
+    BodySizeLimitMiddleware, # pyright: ignore[reportArgumentType]
+    max_bytes=settings.max_body_size_bytes,
+)
+
+# Request logging — outermost, so it observes every request including ones the
+# inner middleware (rate limit, body size) reject, and every 4xx/5xx.
+from app.middleware.request_logging import setup_request_logging
+
+setup_request_logging(app)
+
 
 # ── Global exception handlers ────────────────────────────────────────────
 # These guarantee that an unhandled error in a route returns a clean JSON
@@ -129,20 +150,26 @@ async def julibot_exception_handler(request: Request, exc: JulibotException):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """Catch-all: never let an unhandled exception crash the server."""
-    logger = get_logger(__name__)
-    logger.exception("Unhandled exception on %s", request.url.path, exc_info=exc)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "An unexpected error occurred. Please try again.",
-            "error": "INTERNAL_SERVER_ERROR",
-        },
-    )
+    """Catch-all: never let an unhandled exception crash the server.
+
+    Returns a safe, generic body (no stack / internals leaked) tagged with a
+    stable error id so support and logs can be correlated. The full traceback
+    is logged server-side with the same id and any request_id the logging
+    middleware attached.
+
+    Note: ``BaseExceptionGroup`` (raised by Starlette's ``BaseHTTPMiddleware``
+    task groups) is NOT a subclass of ``Exception``, so this handler misses it.
+    That case is handled by ``app.middleware.request_logging`` which is the
+    outermost middleware and the last line of defense.
+    """
+    from app.core.errors import internal_error_response
+
+    return internal_error_response(request, exc)
 
 # API routers
 app.include_router(auth.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
+app.include_router(health.router, prefix="/api")
 
 
 @app.get("/api")
@@ -160,10 +187,6 @@ async def api_root():
     }
 
 
-@app.get("/api/health")
-async def health():
-    """Health check endpoint."""
-    return {"status": "healthy", "version": settings.app_version}
 
 
 @app.get("/api/config")
