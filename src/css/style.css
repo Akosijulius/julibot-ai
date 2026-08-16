@@ -16,7 +16,9 @@
     --border: #334155;
     --user-msg: #3b82f6;
     --assistant-msg: #475569;
+    --assistant-msg-bg: #1e293b;
     --danger: #ef4444;
+    --danger-hover: #dc2626;
     --success: #22c55e;
     --warning: #f59e0b;
     --radius-sm: 6px;
@@ -25,6 +27,53 @@
     --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     --transition: 0.2s ease;
     --transition-slow: 0.35s ease;
+    /* Theme-dependent accent colors (kept on --bg-dark by default) */
+    --send-btn-bg: rgba(96, 165, 250, 0.3);
+    --code-copy-bg: rgba(15, 23, 42, 0.85);
+    --inline-code-color: #c4b5fd;
+    --input-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    --input-shadow-focus: 0 8px 28px rgba(0, 0, 0, 0.24), 0 0 0 3px rgba(99, 102, 241, 0.15);
+    --overlay-bg: rgba(0, 0, 0, 0.6);
+}
+
+/* Light theme — proper light palette, not an inversion */
+[data-theme="light"] {
+    --bg-dark: #eef2f7;
+    --bg-card: #ffffff;
+    --bg-input: #f3f6fa;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --border: #dbe3ee;
+    --primary-light: rgba(99, 102, 241, 0.12);
+    --danger-hover: #b91c1c;
+    --send-btn-bg: #2563eb;
+    --code-copy-bg: #ffffff;
+    --inline-code-color: #4338ca;
+    --assistant-msg-bg: #ffffff;
+    --input-shadow: 0 4px 12px rgba(15, 23, 42, 0.07);
+    --input-shadow-focus: 0 4px 16px rgba(15, 23, 42, 0.12), 0 0 0 3px rgba(99, 102, 241, 0.22);
+    --overlay-bg: rgba(15, 23, 42, 0.45);
+    --shadow-card: 0 20px 40px -16px rgba(15, 23, 42, 0.2);
+}
+
+/* Dark theme — deep, high-contrast palette (distinct from Default) */
+[data-theme="dark"] {
+    --bg-dark: #0a0a0b;
+    --bg-card: #17171c;
+    --bg-input: #0a0a0b;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --border: #2a2d36;
+    --primary-light: rgba(99, 102, 241, 0.16);
+    --danger-hover: #dc2626;
+    --send-btn-bg: #3b82f6;
+    --code-copy-bg: rgba(10, 10, 11, 0.9);
+    --inline-code-color: #a5b4fc;
+    --assistant-msg-bg: #1d1e26;
+    --input-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --input-shadow-focus: 0 8px 28px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(99, 102, 241, 0.25);
+    --overlay-bg: rgba(0, 0, 0, 0.7);
+    --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
 }
 
 body {
@@ -530,6 +579,7 @@ body {
     justify-content: center;
     font-weight: 600;
     font-size: 0.8125rem;
+    color: #fff;
     flex-shrink: 0;
     cursor: pointer;
     transition: box-shadow var(--transition);
@@ -757,6 +807,75 @@ body {
     visibility: hidden;
 }
 
+/* ── Settings popup (shares the account-popup card styling) ───────────── */
+.settings-popup {
+    min-width: 200px;
+    width: 220px;
+}
+
+/* Hide the Settings button's floating tooltip while its popup is open */
+.sidebar.collapsed .nav-item[aria-expanded="true"]::after {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.settings-section {
+    padding: 0.125rem 0;
+}
+
+.settings-section-label {
+    padding: 0.4375rem 0.625rem 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.settings-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+
+.settings-option:hover {
+    background: var(--primary-light);
+}
+
+.settings-option.selected {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.settings-option .option-check {
+    opacity: 0;
+    color: var(--primary);
+    font-size: 0.8125rem;
+    transition: opacity var(--transition);
+}
+
+.settings-option.selected .option-check {
+    opacity: 1;
+}
+
+.settings-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.25rem 0;
+}
+
 /* ── Mobile drawer backdrop ──────────────────────────────────────────── */
 .sidebar-backdrop {
     position: fixed;
@@ -949,7 +1068,7 @@ body {
 }
 
 .message.assistant .message-content {
-    background: var(--bg-card);
+    background: var(--assistant-msg-bg);
     border-radius: var(--radius-md);
     border-top-left-radius: var(--radius-sm);
 }
@@ -1008,7 +1127,7 @@ body {
     font-size: 0.6875rem;
     font-weight: 600;
     color: var(--text-secondary);
-    background: rgba(15, 23, 42, 0.85);
+    background: var(--code-copy-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     cursor: pointer;
@@ -1190,7 +1309,7 @@ body {
     border-radius: 4px;
     font-family: 'SF Mono', 'Fira Code', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.85em;
-    color: #c4b5fd;
+    color: var(--inline-code-color);
 }
 
 /* Inline code inside user messages */
@@ -1259,13 +1378,13 @@ body {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 18px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--input-shadow);
     transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 .chat-input-box:focus-within {
     border-color: var(--primary);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24), 0 0 0 3px rgba(99, 102, 241, 0.15);
+    box-shadow: var(--input-shadow-focus);
 }
 
 .chat-input {
@@ -1310,7 +1429,7 @@ body {
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background: rgba(96, 165, 250, 0.3); /* light-blue shaded */
+    background: var(--send-btn-bg); /* light-blue shaded */
     color: #fff;
     border: none;
     cursor: pointer;
@@ -1942,7 +2061,7 @@ body {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--overlay-bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2027,6 +2146,7 @@ body {
     justify-content: center;
     font-weight: 600;
     font-size: 1.25rem;
+    color: #fff;
     overflow: hidden;
 }
 
@@ -2079,7 +2199,7 @@ body {
 }
 
 .btn-danger:hover {
-    background: #dc2626;
+    background: var(--danger-hover);
 }
 
 .confirm-text {

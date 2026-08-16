@@ -78,6 +78,14 @@
     var logoutConfirmClose = document.getElementById('logoutConfirmClose');
     var logoutConfirmNo  = document.getElementById('logoutConfirmNo');
     var logoutConfirmYes = document.getElementById('logoutConfirmYes');
+    var settingsPopup    = document.getElementById('settingsPopup');
+    var settingsAccountSection = document.getElementById('settingsAccountSection');
+    var settingsAccountDivider = document.getElementById('settingsAccountDivider');
+    var deleteAccountBtn = document.getElementById('deleteAccountBtn');
+    var deleteAccountConfirm = document.getElementById('deleteAccountConfirm');
+    var deleteAccountConfirmClose = document.getElementById('deleteAccountConfirmClose');
+    var deleteAccountConfirmCancel = document.getElementById('deleteAccountConfirmCancel');
+    var deleteAccountConfirmYes = document.getElementById('deleteAccountConfirmYes');
 
     // ── Streaming Configuration ────────────────────────────────────────────────
     var streamingEnabled = false;
@@ -122,6 +130,7 @@
 
     sidebarToggle.addEventListener('click', function () {
         closeAccountPopup();
+        closeSettingsPopup();
         if (isMobileView()) {
             closeSidebarDrawer();
         } else {
@@ -148,10 +157,12 @@
         if (e.key === 'Escape') {
             closeSidebarDrawer();
             closeAccountPopup();
+            closeSettingsPopup();
             closeProfileModal();
             closeDeleteConfirm();
             closeRenameModal();
             closeLogoutConfirm();
+            closeDeleteAccountConfirm();
         }
     });
 
@@ -175,8 +186,162 @@
         }, 2500);
     }
 
-    settingsBtn.addEventListener('click', function () {
-        showToast('Settings panel coming soon');
+    // ── Settings popup (theme + account settings) ───────────────────────────
+    var THEME_KEY = 'julibot_theme';
+
+    function getSavedTheme() {
+        try {
+            var saved = localStorage.getItem(THEME_KEY);
+            if (saved === 'light' || saved === 'dark') return saved;
+        } catch (e) {}
+        return 'default';
+    }
+
+    var currentTheme = getSavedTheme();
+
+    function applyTheme(theme) {
+        currentTheme = theme;
+        document.documentElement.setAttribute('data-theme', theme);
+        try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+        updateThemeUI();
+    }
+
+    function updateThemeUI() {
+        settingsPopup.querySelectorAll('.settings-option').forEach(function (opt) {
+            var isSelected = opt.dataset.themeValue === currentTheme;
+            opt.classList.toggle('selected', isSelected);
+            opt.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+        });
+    }
+
+    settingsPopup.querySelectorAll('.settings-option').forEach(function (opt) {
+        opt.addEventListener('click', function () {
+            applyTheme(opt.dataset.themeValue);
+        });
+    });
+
+    // Position the popup just above the Settings button, floating over the chat
+    // area (outside the sidebar) and clamped to the viewport — mirrors the
+    // account avatar popup behavior.
+    function positionSettingsPopup() {
+        var rect = settingsBtn.getBoundingClientRect();
+        var popupWidth = settingsPopup.offsetWidth;
+        var popupHeight = settingsPopup.offsetHeight;
+        var gap = 8;
+        var margin = 8;
+
+        var left = rect.left;
+        if (left + popupWidth > window.innerWidth - margin) {
+            left = window.innerWidth - popupWidth - margin;
+        }
+        if (left < margin) left = margin;
+        settingsPopup.style.left = left + 'px';
+
+        // Prefer above the button; flip below if there's no room
+        if (rect.top < popupHeight + gap * 2) {
+            settingsPopup.style.top = (rect.bottom + gap) + 'px';
+            settingsPopup.style.bottom = 'auto';
+        } else {
+            settingsPopup.style.bottom = (window.innerHeight - rect.top + gap) + 'px';
+            settingsPopup.style.top = 'auto';
+        }
+    }
+
+    // "Delete Account" only makes sense for real accounts — guests can't delete
+    // an account, so hide the whole Account Settings section for them.
+    function updateSettingsAccountVisibility() {
+        var showAccount = !isGuest && !!currentUser;
+        if (settingsAccountSection) settingsAccountSection.hidden = !showAccount;
+        if (settingsAccountDivider) settingsAccountDivider.hidden = !showAccount;
+    }
+
+    function openSettingsPopup() {
+        positionSettingsPopup();
+        updateSettingsAccountVisibility();
+        updateThemeUI();
+        settingsPopup.classList.add('open');
+        settingsBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeSettingsPopup() {
+        settingsPopup.classList.remove('open');
+        settingsBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleSettingsPopup() {
+        if (settingsPopup.classList.contains('open')) {
+            closeSettingsPopup();
+        } else {
+            closeAccountPopup();
+            openSettingsPopup();
+        }
+    }
+
+    settingsBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleSettingsPopup();
+    });
+
+    // Close the popup when clicking anywhere outside the Settings button/popup
+    document.addEventListener('click', function (e) {
+        if (settingsPopup.classList.contains('open') &&
+            !e.target.closest('#settingsBtn') &&
+            !e.target.closest('#settingsPopup')) {
+            closeSettingsPopup();
+        }
+    });
+
+    // Keep the popup anchored to the Settings button while the viewport changes
+    window.addEventListener('resize', function () {
+        if (settingsPopup.classList.contains('open')) positionSettingsPopup();
+    });
+
+    window.addEventListener('scroll', function () {
+        if (settingsPopup.classList.contains('open')) positionSettingsPopup();
+    });
+
+    // ── Delete Account ──────────────────────────────────────────────────────
+    function openDeleteAccountConfirm() {
+        if (isGuest || !currentUser) return;
+        closeSettingsPopup();
+        deleteAccountConfirm.hidden = false;
+    }
+
+    function closeDeleteAccountConfirm() {
+        deleteAccountConfirm.hidden = true;
+    }
+
+    deleteAccountBtn.addEventListener('click', openDeleteAccountConfirm);
+
+    deleteAccountConfirmYes.addEventListener('click', async function () {
+        closeDeleteAccountConfirm();
+        deleteAccountConfirmYes.disabled = true;
+        try {
+            // The authenticated user's identity comes from the HttpOnly session
+            // cookie — never a client-supplied ID. The backend deletes the
+            // account and all owned data, then clears the cookie.
+            await api('/auth/me', { method: 'DELETE' });
+
+            // Clear all client-side session state and return to the landing view
+            appSessionVersion++;
+            currentUser = null;
+            isGuest = false;
+            currentConversationId = null;
+            guestConversations = [];
+            activeConversations = [];
+            showWelcomeView();
+            showToast('Your account has been deleted.');
+        } catch (err) {
+            showToast('Delete failed: ' + err.message);
+        } finally {
+            deleteAccountConfirmYes.disabled = false;
+        }
+    });
+
+    deleteAccountConfirmCancel.addEventListener('click', closeDeleteAccountConfirm);
+    deleteAccountConfirmClose.addEventListener('click', closeDeleteAccountConfirm);
+    deleteAccountConfirm.addEventListener('click', function (e) {
+        if (e.target === deleteAccountConfirm) closeDeleteAccountConfirm();
     });
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1168,6 +1333,7 @@
         chatContainer.classList.remove('active');
         guestBanner.style.display = 'none';
         closeAccountPopup();
+        closeSettingsPopup();
         closeProfileModal();
     }
 
@@ -1241,6 +1407,7 @@
         }
         buildAccountPopup();
         updateAvatarInteractivity();
+        updateSettingsAccountVisibility();
     }
 
     function accountPopupItem(action, label, iconSvg, extraClass) {
@@ -1295,6 +1462,7 @@
     }
 
     function openAccountPopup() {
+        closeSettingsPopup();
         positionAccountPopup();
         accountPopup.classList.add('open');
         userInfo.classList.add('account-open');
